@@ -38,3 +38,43 @@ def flatten(root, expanded: set, show_hidden: bool, depth: int = 0) -> list:
         if is_dir and str(entry) in expanded:
             nodes.extend(flatten(entry, expanded, show_hidden, depth + 1))
     return nodes
+
+
+def move_cursor(cursor: int, delta: int, total: int) -> int:
+    if total <= 0:
+        return 0
+    return max(0, min(cursor + delta, total - 1))
+
+
+def clamp_scroll(cursor: int, scroll: int, height: int, total: int) -> int:
+    """Return a scroll offset that keeps `cursor` visible in a window `height` rows tall."""
+    if height <= 0:
+        return 0
+    if cursor < scroll:
+        scroll = cursor
+    elif cursor >= scroll + height:
+        scroll = cursor - height + 1
+    return max(0, min(scroll, max(0, total - height)))
+
+
+def toggle(expanded: set, path: str) -> set:
+    updated = set(expanded)
+    if path in updated:
+        updated.discard(path)
+    else:
+        updated.add(path)
+    return updated
+
+
+def parent_index(nodes: list, cursor: int) -> int:
+    """Row of the directory containing nodes[cursor], or the row itself when at top level."""
+    if not nodes:
+        return 0
+    cursor = max(0, min(cursor, len(nodes) - 1))
+    depth = nodes[cursor].depth
+    if depth == 0:
+        return cursor
+    for row in range(cursor - 1, -1, -1):
+        if nodes[row].depth == depth - 1:
+            return row
+    return cursor
