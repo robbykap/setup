@@ -97,7 +97,8 @@ Residual risks accepted:
   environment. Same risk class as any shell tool.
 - `file-search` downloads pinned `fd`/`rg` release binaries on first use when
   neither is installed. The pinned hashes are upstream's and were not
-  independently verified against the vendors' published checksums.
+  independently verified against the vendors' published checksums at the time
+  of this audit. Verified on 2026-08-18 — see the addendum below.
 - `prepare: "effect-tsgo patch"` in each extension's `package.json` runs on
   `npm install`. Install with `--ignore-scripts` to skip it.
 
@@ -109,3 +110,65 @@ returns normally. The child process additionally runs under Node
 `--permission` with `--allow-fs-read` limited to the worker directory, a
 scrubbed env (`PATH` only), a 128MB heap cap, and a random IPC token
 (`sandbox.ts:84-121`).
+
+## Audit addendum (2026-08-18)
+
+Delta audit covering everything added since the 2026-08-17 audit, plus
+closure of one residual risk.
+
+### `commands` extension (added 6d2a356, 0d1e9e0 — after the base audit)
+
+Clean. Imports only `@earendil-works/pi-*` and its own files; no runtime
+dependencies (`devDependencies`: `typescript` only). The store is in-memory
+and session-scoped. The only filesystem access is *reading back* the spill
+files pi's own bash tool already wrote (`src/full-output.ts`, capped at the
+last 2 MB, `ENOENT`-tolerant); it never writes command output anywhere new.
+No network access, no dynamic code, no environment reads.
+
+### fd/rg pinned hashes verified against upstream
+
+All eight tarballs named in `file-search/src/binaries.ts` were downloaded
+from their release URLs and hashed: every SHA-256 matches the pin. For
+ripgrep 15.2.0, the vendor-published `.tar.gz.sha256` files were also
+fetched and match the pins for all four targets. (fd publishes no checksum
+files, so its four pins were verified against the served artifacts only.)
+
+### Re-checks that still hold
+
+- All 779 entries across the twelve lockfiles resolve to
+  `registry.npmjs.org`; no git or tarball URLs.
+- Dependencies with install scripts are limited to well-known native/probe
+  packages: `msgpackr-extract`, `fsevents`, `protobufjs`, `@google/genai`.
+  The documented `--ignore-scripts` install skips them all.
+- Still no `eval`, no `new Function`, no base64-decoded payloads, and no
+  reads of `~/.ssh`, `~/.aws`, shell rc files, or the keychain anywhere in
+  the tree.
+- `summaries` sends transcript text only through
+  `ModelRegistry.complete()` with the model named in the machine-local
+  `config.private.json`, and stays inert while that file is absent.
+- Child sessions (`subagents`, `workflows`) receive providers via
+  `shared/child-providers.ts` (public registry API, in-process — no
+  credential material is serialized or written) and a denylist that strips
+  spawn/workflow/ask_user tools (`shared/child-session.ts`). Project trust
+  for an alternate cwd fails closed.
+- `copy-all` writes to the clipboard only on an explicit `/copy-all`.
+- No secret or machine-local file (`auth.json`, `models-store.json`,
+  `routing.local.json`, `config.private.json`) is tracked in git.
+
+### New residual risks
+
+- `settings.json` lists `"packages": ["npm:pi-claude-bridge"]`, which pi
+  resolves from npm at startup — **unpinned**, so a compromised or
+  hijacked release would load inside the agent with full extension
+  privileges. This is now the largest unaudited supply-chain surface in
+  the setup; it also sits on the credential path to Claude. Pin an exact
+  version (`npm:pi-claude-bridge@<x.y.z>`) and re-pin deliberately, the
+  same discipline this file applies to vendored code.
+- The repo `.gitignore` does not name `auth.json`, `models-store.json`,
+  `*.local.json`, or `config.private.json`. Nothing is tracked today, but
+  the install flow copies *toward* `~/.pi/agent`; a future reverse sync
+  (`cp -R ~/.pi/agent/. dot-pi/agent/`) would stage live credentials.
+  Guard rails cost one line each.
+- `claude-bridge.json` embeds an absolute home-directory path
+  (`pathToClaudeCodeExecutable`). Not an exfiltration channel — just a
+  reminder that the file is machine-specific and mildly personal.
