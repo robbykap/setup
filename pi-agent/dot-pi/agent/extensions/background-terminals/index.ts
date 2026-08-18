@@ -55,7 +55,7 @@ import {
 import { sanitizeText } from "./src/ui/output-view.ts";
 import { openTerminalPicker } from "./src/ui/ps.ts";
 
-const WIDGET_KEY = "background-terminals";
+const STATUS_KEY = "background-terminals";
 
 export default function (pi: ExtensionAPI) {
   let runtime: TerminalRuntime | undefined;
@@ -81,11 +81,11 @@ export default function (pi: ExtensionAPI) {
     return managerPromise;
   };
 
-  /** One-line widget directly above the editor, only while ≥1 is running.
+  /** Status segment on the shared line directly above the editor, only while ≥1 is running.
    * Called on every manager notification (including per-output-chunk), so it
-   * only touches setWidget when the running count actually changes —
-   * replacing the widget factory hundreds of times a second would churn
-   * component creation for no visible difference. */
+   * only touches setStatus when the running count actually changes —
+   * publishing status updates hundreds of times a second would be wasteful
+   * for no visible difference. */
   let widgetRunning = 0;
   const updateWidget = (manager: TerminalManagerShape) => {
     if (!ui) return;
@@ -96,21 +96,18 @@ export default function (pi: ExtensionAPI) {
       if (running === widgetRunning) return;
       widgetRunning = running;
       if (running === 0) {
-        ui.setWidget(WIDGET_KEY, undefined);
+        ui.setStatus(STATUS_KEY, undefined);
         return;
       }
-      ui.setWidget(WIDGET_KEY, (_tui, theme) => {
-        const line =
-          theme.fg("warning", "■ ") +
-          theme.fg(
-            "text",
-            `${running} background terminal${running === 1 ? "" : "s"} running`,
-          ) +
-          theme.fg("dim", " • ") +
-          theme.fg("accent", "/ps") +
-          theme.fg("dim", " to view");
-        return { render: () => [line], invalidate: () => {} };
-      });
+      // Joins the shared line above the editor rather than owning a row.
+      ui.setStatus(
+        STATUS_KEY,
+        ui.theme.fg("accent", "▶") +
+          " " +
+          ui.theme.fg("warning", String(running)) +
+          " " +
+          ui.theme.fg("text", "terminal" + (running === 1 ? "" : "s")),
+      );
     } catch {
       // UI may be unavailable (print/RPC modes or teardown).
     }
@@ -189,7 +186,7 @@ export default function (pi: ExtensionAPI) {
     unsubStatus?.();
     unsubStatus = undefined;
     try {
-      ui?.setWidget(WIDGET_KEY, undefined);
+      ui?.setStatus(STATUS_KEY, undefined);
     } catch {
       // UI may already be gone.
     }
