@@ -5,9 +5,10 @@ import os
 import shlex
 from pathlib import Path
 
-from . import state, tmuxio, tree
+from . import state, tabs, tmuxio, tree
 
 MOVES = {"up": -1, "down": 1}
+HEADER_ROWS = 2
 # An empty tmuxio.query() result means tmux was unreachable, not that the pane
 # is legitimately running nothing — it MUST fail closed, the same as any other
 # non-shell value.
@@ -122,6 +123,28 @@ def apply_verb(data: dict, verb: str, argument) -> int:
             return 0
         target = node.path if node.is_dir else str(Path(node.path).parent)
         send_to_shell(f"cd {shlex.quote(target)}")
+        return 0
+
+    if verb == "click":
+        try:
+            row = int(argument)
+        except (TypeError, ValueError):
+            return 2
+        if row == 0:
+            data["view"] = "files" if data["view"] == "tabs" else "tabs"
+            return 0
+        body = row - HEADER_ROWS
+        if body < 0:
+            return 0
+        if data["view"] == "tabs":
+            listing = tmuxio.run("list-windows", "-F", tabs.FORMAT).stdout or ""
+            index = tabs.index_for_row(tabs.parse(listing), body)
+            if index is not None:
+                tmuxio.run("select-window", "-t", str(index))
+            return 0
+        total = len(nodes_for(data))
+        if total:
+            settings["cursor"] = min(settings["scroll"] + body, total - 1)
         return 0
 
     return 2

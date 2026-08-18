@@ -186,5 +186,59 @@ class TestActivate(unittest.TestCase):
         self.assertIn("running", running_message)
 
 
+class ClickTmux(FakeTmux):
+    """FakeTmux that also answers list-windows, which click handling needs."""
+
+    def __init__(self, windows="1|1|1|0|0|nvim\n2|0|1|0|0|server\n"):
+        super().__init__()
+        self.stdout = windows
+        self.selected = []
+
+    def run(self, *args, runner=None):
+        if args and args[0] == "select-window":
+            self.selected.append(args[-1])
+        return super().run(*args, runner=runner)
+
+
+class TestClick(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["XDG_STATE_HOME"] = self.tmp
+        self.root = Path(tempfile.mkdtemp())
+        (self.root / "a.txt").write_text("")
+        (self.root / "b.txt").write_text("")
+        (self.root / "c.txt").write_text("")
+        state.save("s1", state.default_state(str(self.root)))
+        self.fake = ClickTmux()
+        patcher = mock.patch.object(cmd_main, "tmuxio", self.fake)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_click_on_header_toggles_view(self):
+        cmd_main.main(["--session", "s1", "click", "0"])
+        self.assertEqual(state.load("s1", str(self.root))["view"], "files")
+
+    def test_click_on_separator_row_does_nothing(self):
+        cmd_main.main(["--session", "s1", "click", "1"])
+        self.assertEqual(state.load("s1", str(self.root))["view"], "tabs")
+        self.assertEqual(self.fake.selected, [])
+
+    def test_click_on_tab_row_selects_that_window(self):
+        cmd_main.main(["--session", "s1", "click", "3"])
+        self.assertEqual(self.fake.selected, ["2"])
+
+    def test_click_past_the_last_tab_selects_nothing(self):
+        cmd_main.main(["--session", "s1", "click", "9"])
+        self.assertEqual(self.fake.selected, [])
+
+    def test_click_in_files_view_moves_the_cursor(self):
+        cmd_main.main(["--session", "s1", "view", "files"])
+        cmd_main.main(["--session", "s1", "click", "4"])
+        self.assertEqual(state.load("s1", str(self.root))["tree"]["cursor"], 2)
+
+    def test_non_numeric_click_is_rejected(self):
+        self.assertEqual(cmd_main.main(["--session", "s1", "click", "x"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
