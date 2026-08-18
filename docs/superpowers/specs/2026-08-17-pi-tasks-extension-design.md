@@ -96,7 +96,10 @@ output** for that call, throttled by Pi — so the buffer is **replaced**, not
 appended; appending would duplicate everything. `tool_execution_end` settles the
 entry with success or error.
 
-`user_bash` entries follow the same lifecycle, tagged as user-sourced.
+`user_bash` entries follow the same lifecycle, tagged as user-sourced. Pi emits
+no "user bash finished" event, so these are captured by wrapping the
+`BashOperations` Pi uses to run the command: the wrapper tees output into the
+store and settles the task when execution returns or throws.
 
 Events for unknown ids (an `end` without a `start`, e.g. after `/reload`) are
 ignored rather than throwing.
