@@ -48,6 +48,29 @@ export interface ViewerState {
 /** What the viewer returns: a sibling to open, or null to go back. */
 export type ViewerExit = { readonly next: string } | null;
 
+/**
+ * Whether the viewer has to ask git what changed.
+ *
+ * Two records arrive without hunks, not one: a child session's change, which
+ * announces itself as pending, and anything `write` produced — write reports
+ * no patch (record.ts measureWrite), so its record lands with zero hunks and
+ * `hunksPending` already false. Keying off the flag alone left every written
+ * file showing an empty panel.
+ */
+export function needsHunkResolution(change: FileChange | undefined): boolean {
+  if (!change) return false;
+  return change.hunksPending || change.hunks.length === 0;
+}
+
+/** Why the body is empty, or null when it is not. A blank panel is a bug
+ * report waiting to happen; say what happened instead. */
+export function emptyBodyMessage(change: FileChange | undefined): string | null {
+  if (!change) return "file is no longer tracked";
+  if (change.hunks.length > 0) return null;
+  if (change.hunksPending) return "no diff available for this file yet";
+  return "no diff against HEAD — the file matches the last commit";
+}
+
 function lineColor(kind: DiffLine["kind"]) {
   if (kind === "add") return "toolDiffAdded" as const;
   if (kind === "remove") return "toolDiffRemoved" as const;
@@ -254,13 +277,12 @@ export class DiffViewer implements Component {
       topBorder(theme, width, position),
     ];
 
-    const body = !change
-      ? [theme.fg("dim", "file is no longer tracked")]
-      : change.hunksPending
-        ? [theme.fg("dim", "no diff available for this file")]
-        : mode === "split"
-          ? this.splitLines(change, inner - 2)
-          : this.stackedLines(change, inner - 2);
+    const placeholder = emptyBodyMessage(change);
+    const body = placeholder
+      ? [theme.fg("dim", placeholder)]
+      : mode === "split"
+        ? this.splitLines(change!, inner - 2)
+        : this.stackedLines(change!, inner - 2);
 
     const height = bodyHeight(this.tui.terminal.rows, DiffViewer.CHROME);
     this.offset = Math.max(
@@ -312,7 +334,7 @@ export async function openDiffViewer(
   paths: ReadonlyArray<string> = store.list().map((change) => change.path),
 ): Promise<ViewerExit> {
   const change = store.get(path);
-  if (change?.hunksPending) {
+  if (needsHunkResolution(change)) {
     const resolved = diffAgainstHead(cwd, path);
     if (resolved) {
       store.resolveHunks(path, {
