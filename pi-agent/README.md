@@ -77,11 +77,12 @@ drop from the right when the line will not fit. Extensions publish through
 `ctx.ui.setStatus`; `ui-customization` renders the line.
 
 `file-edits` collapses every `edit` and `write` to two lines in the
-transcript. `ctrl+f` (or `/files`) opens the picker; Enter opens the diff
+transcript. `alt+e` (or `/files`) opens the picker; Enter opens the diff
 viewer, `s` toggles stacked and split, `n`/`p` move between files. `ctrl+o`
-still expands a row inline. If pi reports a keybinding conflict for `ctrl+f`
-at startup, the fallback is `ctrl+shift+f` — this has not been verified
-interactively yet. `file-edits` has no `effect` dependency; install it the
+still expands a row inline. The shortcut is `alt+e` rather than `ctrl+f`
+because `ctrl+f` is pi's built-in forward-char binding and `ctrl+shift+f` is
+also already bound; `/files` opens the same picker if you'd rather skip the
+shortcut. `file-edits` has no `effect` dependency; install it the
 same way as the other extensions, per [Install](#install) above.
 
 ## Model configuration

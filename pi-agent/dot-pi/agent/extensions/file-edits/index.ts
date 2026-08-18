@@ -12,7 +12,7 @@
  * summary line in renderResult. Overriding renderResult alone would make the
  * row longer, not shorter.
  *
- * ctrl+f (or /files) opens the picker; Enter there opens the diff viewer,
+ * alt+e (or /files) opens the picker; Enter there opens the diff viewer,
  * which toggles between a unified and a side-by-side layout.
  */
 
@@ -221,7 +221,7 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerShortcut("ctrl+f", {
+  pi.registerShortcut("alt+e", {
     description: "Browse changed files",
     handler: async (ctx) => {
       if (ctx.mode !== "tui") return;
