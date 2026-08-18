@@ -487,6 +487,7 @@ export default function (pi: ExtensionAPI) {
             onFileTouched: (path: string) =>
               pi.events.emit(CHILD_FILE_CHANNEL, {
                 path,
+                cwd,
                 origin: { kind: "subagent", id: title, name: title },
               }),
           },
@@ -868,6 +869,7 @@ export default function (pi: ExtensionAPI) {
             onFileTouched: (path: string) =>
               pi.events.emit(CHILD_FILE_CHANNEL, {
                 path,
+                cwd: ctx.cwd,
                 origin: { kind: "subagent", id: btwTitle, name: btwTitle },
               }),
           },

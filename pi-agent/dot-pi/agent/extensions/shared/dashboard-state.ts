@@ -108,6 +108,9 @@ export interface ChildFileEvent {
   readonly origin:
     | { readonly kind: "subagent"; readonly id: string; readonly name: string }
     | { readonly kind: "workflow"; readonly label: string };
+  /** The child's working directory. A relative path must be resolved against
+   * this, not the parent's cwd — a child may run somewhere else entirely. */
+  readonly cwd?: string;
 }
 
 export function isChildFileEvent(value: unknown): value is ChildFileEvent {

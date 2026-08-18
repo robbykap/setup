@@ -48,3 +48,15 @@ test("unsubscribing stops recording", () => {
   });
   assert.equal(store.size(), 0);
 });
+
+test("a relative path resolves against the child's cwd, not the parent's", () => {
+  const store = createFileEditStore();
+  const events = bus();
+  observeChildFiles(events as never, store, "/repo");
+  events.emit("dashboard:child-file", {
+    path: "b.ts",
+    cwd: "/repo/sub",
+    origin: { kind: "workflow", label: "run" },
+  });
+  assert.ok(store.get("sub/b.ts"), `expected sub/b.ts, got ${store.list().map((c) => c.path).join(",")}`);
+});

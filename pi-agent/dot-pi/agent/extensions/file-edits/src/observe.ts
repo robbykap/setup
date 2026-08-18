@@ -21,7 +21,7 @@ export function observeChildFiles(
     if (!isChildFileEvent(value)) return;
     const absolute = path.isAbsolute(value.path)
       ? value.path
-      : path.join(cwd, value.path);
+      : path.join(value.cwd ?? cwd, value.path);
     const relative = path.relative(cwd, absolute);
     store.recordExternal({
       path: relative.startsWith("..") ? absolute : relative,

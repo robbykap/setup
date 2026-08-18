@@ -568,6 +568,7 @@ export default function workflows(pi: ExtensionAPI) {
               onFileTouched: (path: string) =>
                 pi.events.emit(CHILD_FILE_CHANNEL, {
                   path,
+                  cwd: ctx.cwd,
                   origin: { kind: "workflow", label },
                 }),
             });
