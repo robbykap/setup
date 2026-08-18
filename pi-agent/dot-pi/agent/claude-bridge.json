@@ -1,0 +1,14 @@
+{
+  "askClaude": {
+    "enabled": true,
+    "allowFullMode": true,
+    "defaultIsolated": false,
+    "description": "Custom tool description override"
+  },
+  "provider": {
+    "plan": "max",
+    "longContextExtraUsage": false,
+    "strictMcpConfig": true,
+    "pathToClaudeCodeExecutable": "/Users/robbykapua/.local/bin/claude"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "lastChangelogVersion": "0.84.2",
+  "theme": "dark",
+  "packages": [
+    "npm:pi-claude-bridge"
+  ],
+  "defaultProvider": "claude-bridge",
+  "defaultModel": "claude-opus-5"
+}

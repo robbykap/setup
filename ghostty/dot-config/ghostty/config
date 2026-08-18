@@ -1,0 +1,9 @@
+# Ghostty configuration
+# Plain settings only. Nothing here launches tmux or references any repo.
+
+theme = Catppuccin Frappe
+font-size = 13
+window-padding-x = 4
+window-padding-y = 4
+macos-option-as-alt = true
+mouse-hide-while-typing = true

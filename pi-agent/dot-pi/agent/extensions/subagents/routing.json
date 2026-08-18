@@ -1,0 +1,26 @@
+{
+  "tiers": {
+    "quick": {
+      "models": [
+        "claude-bridge/claude-haiku-4-5",
+        "claude-bridge/claude-sonnet-4-6"
+      ],
+      "thinking": "low"
+    },
+    "standard": {
+      "models": [
+        "claude-bridge/claude-sonnet-5",
+        "claude-bridge/claude-opus-4-8"
+      ],
+      "thinking": "medium"
+    },
+    "deep": {
+      "models": [
+        "claude-bridge/claude-opus-5",
+        "claude-bridge/claude-fable-5"
+      ],
+      "thinking": "high"
+    }
+  },
+  "longContextThreshold": 500000
+}

@@ -1,9 +1,0 @@
-# Ghostty configuration
-# Copy or symlink to ~/.config/ghostty/config
-
-theme = Catppuccin Frappe
-font-size = 13
-window-padding-x = 4
-window-padding-y = 4
-macos-option-as-alt = true
-mouse-hide-while-typing = true
