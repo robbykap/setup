@@ -243,17 +243,23 @@ export function recordToolExecutionTiming(
   });
 }
 
-/** Announce a file this child touched. Only the path is available: the end
- * event carries no details, so the parent computes the diff itself. */
+/** Announce a file this child touched, but only once its edit succeeds: the
+ * path is captured at the start event and reported at the matching end
+ * event, keyed by toolCallId so a failed edit is never reported. */
 function reportTouchedFile(
   event: ToolTimingEvent,
+  touchedByToolCallId: Map<string, string>,
   onFileTouched: ((path: string) => void) | undefined,
 ) {
-  if (!onFileTouched) return;
-  if (event.type !== "tool_execution_start") return;
-  if (event.toolName !== "edit" && event.toolName !== "write") return;
-  const target = (event.args as { path?: unknown } | undefined)?.path;
-  if (typeof target === "string") onFileTouched(target);
+  if (event.type === "tool_execution_start") {
+    if (event.toolName !== "edit" && event.toolName !== "write") return;
+    const target = (event.args as { path?: unknown } | undefined)?.path;
+    if (typeof target === "string") touchedByToolCallId.set(event.toolCallId, target);
+    return;
+  }
+  const touched = touchedByToolCallId.get(event.toolCallId);
+  touchedByToolCallId.delete(event.toolCallId);
+  if (touched !== undefined && !event.isError) onFileTouched?.(touched);
 }
 
 function toolMetadata(
@@ -507,6 +513,7 @@ export async function runAgent(
   let stopReason: string | undefined;
   let errorMessage: string | undefined;
   const toolTimings = new Map<string, ToolExecutionTiming>();
+  const touchedByToolCallId = new Map<string, string>();
 
   const sync = () => {
     const messages = childSession.messages;
@@ -563,7 +570,7 @@ export async function runAgent(
       event.type === "tool_execution_end"
     ) {
       recordToolExecutionTiming(toolTimings, event);
-      reportTouchedFile(event, options.onFileTouched);
+      reportTouchedFile(event, touchedByToolCallId, options.onFileTouched);
     } else if (
       event.type !== "message_end" &&
       event.type !== "compaction_end"

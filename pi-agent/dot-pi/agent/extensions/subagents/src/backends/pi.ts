@@ -328,6 +328,10 @@ const makePiSession = (
       settled: false,
     };
 
+    /** Path touched by an in-flight edit/write, keyed by toolCallId; reported
+     * to the parent only if the tool ends without an error. */
+    const touchedByToolCallId = new Map<string, string>();
+
     const events = yield* Queue.make<SubagentEvent, Cause.Done>();
     const emit = (event: SubagentEvent) => {
       Queue.offerUnsafe(events, event);
@@ -452,7 +456,7 @@ const makePiSession = (
         case "tool_execution_start":
           if (event.toolName === "edit" || event.toolName === "write") {
             const target = (event.args as { path?: unknown } | undefined)?.path;
-            if (typeof target === "string") task.parent.onFileTouched?.(target);
+            if (typeof target === "string") touchedByToolCallId.set(event.toolCallId, target);
           }
           emit({
             _tag: "ToolStart",
@@ -468,7 +472,12 @@ const makePiSession = (
             outputPreview: toolPreview(event.partialResult),
           });
           break;
-        case "tool_execution_end":
+        case "tool_execution_end": {
+          const touched = touchedByToolCallId.get(event.toolCallId);
+          touchedByToolCallId.delete(event.toolCallId);
+          if (touched !== undefined && !event.isError) {
+            task.parent.onFileTouched?.(touched);
+          }
           emit({
             _tag: "ToolEnd",
             toolId: event.toolCallId,
@@ -477,6 +486,7 @@ const makePiSession = (
             outputPreview: toolPreview(event.result),
           });
           break;
+        }
         case "queue_update":
           emit({
             _tag: "QueueChanged",
