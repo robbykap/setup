@@ -57,8 +57,14 @@ Nothing in git names a model, so a fresh clone starts unconfigured on purpose.
 | `/routing`       | Which models each subagent effort tier uses    | `extensions/subagents/routing.local.json`   |
 | `/summary-model` | The model and reasoning level for run recaps   | `extensions/summaries/config.private.json`  |
 
-Both read the live model registry, so at work they list Copilot's models with
-no code change. Both are gitignored.
+Both list only models from providers you are **authenticated with** on this
+machine (`getAvailable()`, not pi's ~1,275-model catalog), so at work they show
+Copilot's models and here they show claude-bridge's. Both files are gitignored.
+
+Routing resolves against the same authenticated set, so a tier naming a model
+you have no credentials for is skipped rather than failing at spawn time. An
+explicitly named `model` still resolves against the full catalog, so naming an
+unauthenticated model reports a missing key rather than a missing model.
 
 ### Subagent routing
 

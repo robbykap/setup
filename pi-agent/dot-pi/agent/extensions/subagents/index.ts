@@ -70,6 +70,7 @@ import {
   describeTier,
   parseTierChoice,
 } from "./src/routing-ui.ts";
+import { registrySnapshot } from "./src/registry-snapshot.ts";
 import { buildModelChoices } from "../shared/model-choices.ts";
 import {
   formatActivityStatus,
@@ -162,17 +163,6 @@ function resolveChildProjectTrust(options: {
 
 /** This extension's own directory, where `routing.json` lives. */
 const EXTENSION_DIR = path.dirname(url.fileURLToPath(import.meta.url));
-
-/**
- * pi's `Model` structurally satisfies `ModelLike`, but the registry hands
- * back a wider type; narrow it to exactly what the router reads.
- */
-function registrySnapshot(ctx: { modelRegistry?: unknown }): ModelLike[] {
-  const registry = ctx.modelRegistry as
-    | { getAll(): readonly ModelLike[] }
-    | undefined;
-  return registry ? [...registry.getAll()] : [];
-}
 
 function routeSpawn(
   ctx: ExtensionContext,
