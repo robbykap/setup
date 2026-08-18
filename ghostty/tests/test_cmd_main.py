@@ -159,6 +159,32 @@ class TestActivate(unittest.TestCase):
         self.assertIn(str(self.root), self.fake.sent[0][3])
         self.assertNotIn("notes one.md", self.fake.sent[0][3])
 
+    def test_nothing_is_sent_when_current_command_is_unknown(self):
+        # Empty #{pane_current_command} means tmux could not be reached, not
+        # that a program happens to be running — must still fail closed.
+        self.fake.answers["#{pane_current_command}"] = ""
+        self.assertFalse(cmd_main.send_to_shell("ls"))
+        self.assertEqual(self.fake.sent, [])
+
+    def test_nothing_is_sent_when_pane_id_is_unknown(self):
+        self.fake.answers["#{pane_id}"] = ""
+        self.assertFalse(cmd_main.send_to_shell("ls"))
+        self.assertEqual(self.fake.sent, [])
+
+    def test_unreachable_tmux_message_differs_from_program_running_message(self):
+        self.fake.answers["#{pane_current_command}"] = ""
+        cmd_main.send_to_shell("ls")
+        unreachable_message = self.fake.messages[0][1]
+
+        self.fake.messages = []
+        self.fake.answers["#{pane_current_command}"] = "psql"
+        cmd_main.send_to_shell("ls")
+        running_message = self.fake.messages[0][1]
+
+        self.assertNotEqual(unreachable_message, running_message)
+        self.assertNotIn("running", unreachable_message)
+        self.assertIn("running", running_message)
+
 
 if __name__ == "__main__":
     unittest.main()

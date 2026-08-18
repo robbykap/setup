@@ -4,13 +4,14 @@ from dataclasses import dataclass
 
 FIELDS = (
     "#{window_index}",
-    "#{window_name}",
     "#{window_active}",
     "#{window_panes}",
     "#{window_zoomed_flag}",
     "#{window_bell_flag}",
+    "#{window_name}",
 )
-FORMAT = "\t".join(FIELDS)
+SEP = "|"
+FORMAT = SEP.join(FIELDS)
 
 
 @dataclass(frozen=True)
@@ -26,22 +27,22 @@ class Tab:
 def parse(output: str) -> list:
     result = []
     for line in output.splitlines():
-        fields = line.split("\t")
+        fields = line.split(SEP, len(FIELDS) - 1)
         if len(fields) != len(FIELDS):
             continue
         try:
             index = int(fields[0])
-            panes = int(fields[3])
+            panes = int(fields[2])
         except ValueError:
             continue
         result.append(
             Tab(
                 index=index,
-                name=fields[1],
-                active=fields[2] == "1",
+                name=fields[5],
+                active=fields[1] == "1",
                 panes=panes,
-                zoomed=fields[4] == "1",
-                bell=fields[5] == "1",
+                zoomed=fields[3] == "1",
+                bell=fields[4] == "1",
             )
         )
     return result

@@ -6,7 +6,10 @@ DEFAULT_SESSION = "gw"
 
 
 def _default_runner(args, **kwargs):
-    return subprocess.run(args, capture_output=True, text=True, check=False, **kwargs)
+    try:
+        return subprocess.run(args, capture_output=True, text=True, check=False, **kwargs)
+    except OSError as error:
+        return subprocess.CompletedProcess(args, 127, "", str(error))
 
 
 def run(*args, runner=None):

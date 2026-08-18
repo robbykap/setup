@@ -8,16 +8,24 @@ from pathlib import Path
 from . import state, tmuxio, tree
 
 MOVES = {"up": -1, "down": 1}
+# An empty tmuxio.query() result means tmux was unreachable, not that the pane
+# is legitimately running nothing — it MUST fail closed, the same as any other
+# non-shell value.
 SHELLS = {"sh", "bash", "zsh", "fish", "nu"}
 
 
 def send_to_shell(command: str) -> bool:
     """Type `command` into the active pane, but only if a shell is what is running there."""
     running = tmuxio.query("#{pane_current_command}")
+    if not running:
+        tmuxio.run("display-message", "sidebar: tmux unreachable — not sending")
+        return False
     if running not in SHELLS:
-        tmuxio.run("display-message", f"sidebar: {running or 'a program'} is running — not sending")
+        tmuxio.run("display-message", f"sidebar: {running} is running — not sending")
         return False
     pane = tmuxio.query("#{pane_id}")
+    if not pane:
+        return False
     tmuxio.run("send-keys", "-t", pane, command, "Enter")
     return True
 
