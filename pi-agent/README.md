@@ -41,10 +41,31 @@ tool names — pi refuses to load both.
 | `ask-user`             | Lets the model ask multiple-choice questions                |
 | `git-info`             | Branch and changed-file status in the bottom bar            |
 | `model-info`           | Model, context use, and cost in the bottom bar              |
-| `ui-customization`     | Bottom bar layout                                           |
+| `ui-customization`     | Apple-pie header art and the bottom bar layout              |
 | `copy-all`             | Copy the whole conversation                                 |
 | `workflows`            | Multi-phase orchestration in a permission-restricted sandbox |
 | `summaries`            | Automatic run recaps (sends transcript text to a model)     |
+
+## Theme
+
+`themes/catppuccin-mocha.json` is a full [Catppuccin
+Mocha](https://catppuccin.com/palette) theme, selected by `settings.json`
+(`"theme": "catppuccin-mocha"`). It is written here, not vendored. Pi picks it
+up from `~/.pi/agent/themes/` and hot-reloads edits to the active theme.
+
+`ui-customization` draws its header art from the same palette, so the pie, the
+footer accents, and the rest of the TUI stay in one world. The footer is one
+line:
+
+```
+~/Documents/github/setup ◆ ⎇ main ±3 PR #12 ◆ claude-bridge/claude-opus-5 (high)   [▰▰▰▰▰▰▱▱▱▱] 62% $0.41
+```
+
+The current directory is shaded apart from the path leading to it, the effort
+tag reuses pi's `thinking*` tokens so a level looks the same there as on the
+editor border, and the gauge drains as context fills (green → yellow at 25% →
+red at 10%). Ghostty is on Catppuccin Mocha too
+(`ghostty/dot-config/ghostty/config`).
 
 ## Model configuration
 

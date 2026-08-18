@@ -20,7 +20,8 @@ files those depend on, and the `background-terminals` skill.
 
 - `firecrawl-search` — requires a paid API key and sends queries off-machine
 - `spark-strict-tools` — only fires for the `spark-deepseek` provider
-- `themes/github-dark-default.json` — not selected
+- `themes/github-dark-default.json` — not selected; `themes/catppuccin-mocha.json`
+  here is our own file, not upstream's
 
 ## What was modified
 
@@ -31,6 +32,12 @@ backends granted children unsupervised host access
 `sandbox: "danger-full-access"`) and could each run only their own vendor's
 models. `src/backends/stub.ts` is retained: it is a test-only fake backend
 that `manager.test.ts` runs against.
+
+`ui-customization` no longer renders upstream's blue "PI" block letters or its
+blue footer. The header is an apple-pie drawing and the footer is a single
+Catppuccin Mocha line — `path/root ◆ branch ±n PR# ◆ provider/model (effort)` on
+the left, a context-headroom gauge, percentage, and cost on the right — both
+drawn from the same palette as `themes/catppuccin-mocha.json`.
 
 `summaries` no longer ships a default recap model. Upstream defaulted to
 `openai-codex/gpt-5.6-luna`, a provider this setup does not configure. Rather

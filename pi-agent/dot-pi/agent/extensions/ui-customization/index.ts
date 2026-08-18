@@ -4,6 +4,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
   ReadonlyFooterDataProvider,
+  ThemeColor,
 } from "@earendil-works/pi-coding-agent";
 import {
   getCapabilities,
@@ -34,22 +35,56 @@ interface DashboardTui extends RenderableNode {
 
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
-const PALETTE: Rgb[] = [
-  [22, 83, 189],
-  [48, 129, 247],
-  [93, 171, 255],
-  [151, 205, 255],
-  [93, 171, 255],
-  [48, 129, 247],
+// Footer furniture: group separators, a branch mark, and the headroom gauge.
+const SEPARATOR = " ◆ ";
+const BRANCH = "⎇";
+// ± is the conventional "working tree differs" mark; it reads as changes in
+// both directions rather than additions.
+const DIRTY = "±";
+const GAUGE_WIDTH = 10;
+const GAUGE_FULL = "▰";
+const GAUGE_EMPTY = "▱";
+
+// Catppuccin Mocha. The header art is drawn from this palette only, so it
+// stays in step with themes/catppuccin-mocha.json.
+const MOCHA = {
+  rosewater: [245, 224, 220],
+  pink: [245, 194, 231],
+  mauve: [203, 166, 247],
+  red: [243, 139, 168],
+  maroon: [235, 160, 172],
+  peach: [250, 179, 135],
+  yellow: [249, 226, 175],
+  lavender: [180, 190, 254],
+  subtext0: [166, 173, 200],
+  overlay1: [127, 132, 156],
+  surface2: [88, 91, 112],
+} satisfies Record<string, Rgb>;
+
+// An apple pie, flat and wide the way a pie actually sits: steam, a sugared
+// dome, a woven lattice over the filling, a fluted crust edge, and the tin.
+// Every row is exactly PIE_WIDTH cells so the block centers as one shape.
+const PIE_WIDTH = 23;
+const PIE_LINES = [
+  "        ‧  ‧  ‧        ",
+  "     ▁▁▁▁▁▁▁▁▁▁▁▁▁     ",
+  "   ╱▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚╲   ",
+  "  ╱▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞▚▞╲  ",
+  "▄▟▄▟▄▟▄▟▄▟▄▟▄▟▄▟▄▟▄▟▄▟▄",
+  " ╲▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁╱ ",
 ];
-const TITLE_LINES = [
-  "  ██████╗  ██╗ ",
-  "  ██╔══██╗ ██║ ",
-  "  ██████╔╝ ██║ ",
-  "  ██╔═══╝  ██║ ",
-  "  ██║      ██║ ",
-  "  ╚═╝      ╚═╝ ",
+// Left-to-right sweep per row, warm crust on top, cooling into the tin.
+const PIE_ROW_COLORS: Array<[Rgb, Rgb]> = [
+  [MOCHA.surface2, MOCHA.overlay1],
+  [MOCHA.rosewater, MOCHA.yellow],
+  [MOCHA.yellow, MOCHA.peach],
+  [MOCHA.peach, MOCHA.maroon],
+  [MOCHA.yellow, MOCHA.peach],
+  [MOCHA.surface2, MOCHA.overlay1],
 ];
+// Lattice gaps show the apple filling, not the crust.
+const FILLING_CHARS = new Set(["▚", "▞"]);
+const FILLING_COLORS: [Rgb, Rgb] = [MOCHA.red, MOCHA.maroon];
 const ANSI_PATTERN =
   /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
 // eslint-disable-next-line no-control-regex
@@ -72,19 +107,11 @@ function mix(a: number, b: number, amount: number) {
   return Math.round(a + (b - a) * amount);
 }
 
-function sampleGradient(position: number) {
-  const wrapped = ((position % 1) + 1) % 1;
-  const scaled = wrapped * PALETTE.length;
-  const index = Math.floor(scaled);
-  const nextIndex = (index + 1) % PALETTE.length;
-  const amount = scaled - index;
-  const start = PALETTE[index]!;
-  const end = PALETTE[nextIndex]!;
-
+function blend([r1, g1, b1]: Rgb, [r2, g2, b2]: Rgb, amount: number) {
   return [
-    mix(start[0], end[0], amount),
-    mix(start[1], end[1], amount),
-    mix(start[2], end[2], amount),
+    mix(r1, r2, amount),
+    mix(g1, g2, amount),
+    mix(b1, b2, amount),
   ] satisfies Rgb;
 }
 
@@ -92,17 +119,26 @@ function foreground([red, green, blue]: Rgb, text: string) {
   return `\x1b[38;2;${red};${green};${blue}m${text}${RESET}`;
 }
 
-function gradientText(text: string, phase: number) {
+function sweep(text: string, [from, to]: [Rgb, Rgb], override?: [Rgb, Rgb]) {
   const characters = [...text];
   const span = Math.max(characters.length - 1, 1);
 
   return characters
-    .map((character, index) =>
-      character === " "
-        ? character
-        : foreground(sampleGradient(index / span + phase), character),
-    )
+    .map((character, index) => {
+      if (character === " ") return character;
+      const amount = index / span;
+      const stops =
+        override && FILLING_CHARS.has(character) ? override : [from, to];
+      return foreground(blend(stops[0]!, stops[1]!, amount), character);
+    })
     .join("");
+}
+
+function pieArt() {
+  return PIE_LINES.map((line, row) => {
+    const padded = line.padEnd(PIE_WIDTH, " ");
+    return sweep(padded, PIE_ROW_COLORS[row]!, FILLING_COLORS);
+  });
 }
 
 function hasChildren(
@@ -146,10 +182,32 @@ function hideThemesSection(component: RenderableNode) {
   return false;
 }
 
-function formatTokens(tokens: number) {
-  if (tokens < 1_000) return `${tokens}`;
-  if (tokens < 1_000_000) return `${Math.round(tokens / 1_000)}k`;
-  return `${(tokens / 1_000_000).toFixed(1)}m`;
+// Effort reads at a glance: the same color the editor border already uses for
+// that thinking level.
+function effortColor(level: string): ThemeColor {
+  switch (level) {
+    case "minimal":
+      return "thinkingMinimal";
+    case "low":
+      return "thinkingLow";
+    case "medium":
+      return "thinkingMedium";
+    case "high":
+      return "thinkingHigh";
+    case "xhigh":
+      return "thinkingXhigh";
+    case "max":
+      return "thinkingMax";
+    default:
+      return "thinkingOff";
+  }
+}
+
+// Context headroom, not context spent: the number you act on.
+function headroomColor(percentLeft: number): ThemeColor {
+  if (percentLeft <= 10) return "error";
+  if (percentLeft <= 25) return "warning";
+  return "success";
 }
 
 function formatDirectory(cwd: string) {
@@ -157,6 +215,15 @@ function formatDirectory(cwd: string) {
   if (cwd === home) return "~";
   const display = cwd.startsWith(`${home}/`) ? `~/${relative(home, cwd)}` : cwd;
   return sanitizeTerminalLabel(display);
+}
+
+// The directory you are in matters more than the path that leads to it, so the
+// last segment gets its own shade.
+function splitDirectory(cwd: string) {
+  const display = formatDirectory(cwd);
+  const cut = display.lastIndexOf("/");
+  if (cut < 0) return { lead: "", root: display };
+  return { lead: display.slice(0, cut + 1), root: display.slice(cut + 1) };
 }
 
 function center(text: string, width: number) {
@@ -227,14 +294,9 @@ export default function uiCustomization(pi: ExtensionAPI) {
 
       return {
         render(width: number) {
-          const art = TITLE_LINES.map((line, row) =>
-            center(gradientText(line, row * 0.045), width),
-          );
-          const subtitle = center(
-            `${BOLD}${gradientText(title, 0.18)}${RESET}`,
-            width,
-          );
-          return ["", ...art, subtitle, ""];
+          const art = pieArt().map((line) => center(line, width));
+          const wordmark = `${BOLD}${foreground(MOCHA.mauve, "pi")}${RESET}${foreground(MOCHA.overlay1, " · ")}${foreground(MOCHA.lavender, title)}`;
+          return ["", ...art, center(wordmark, width), ""];
         },
         invalidate() {},
       };
@@ -246,40 +308,71 @@ export default function uiCustomization(pi: ExtensionAPI) {
       return {
         invalidate() {},
         render(width: number) {
-          const directory = theme.fg("text", formatDirectory(ctx.cwd));
-          const fileLabel = gitInfo.changedFiles === 1 ? "file" : "files";
-          let git = gitInfo.branch
-            ? `${gitInfo.branch} · ${gitInfo.changedFiles} ${fileLabel} changed`
-            : "";
+          const diamond = theme.fg("dim", SEPARATOR);
 
-          if (gitInfo.pullRequest) {
-            const prLabel = `PR #${gitInfo.pullRequest.number}`;
-            const linkedPr = getCapabilities().hyperlinks
-              ? hyperlink(prLabel, gitInfo.pullRequest.url)
-              : prLabel;
-            git += ` · ${linkedPr}`;
+          const { lead, root } = splitDirectory(ctx.cwd);
+          const directory = `${theme.fg("dim", lead)}${theme.bold(theme.fg("accent", root))}`;
+
+          const groups = [directory];
+
+          if (gitInfo.branch) {
+            let git = theme.fg(
+              "mdListBullet",
+              `${BRANCH} ${gitInfo.branch}`,
+            );
+            if (gitInfo.changedFiles > 0) {
+              git += theme.fg(
+                "warning",
+                ` ${DIRTY}${gitInfo.changedFiles}`,
+              );
+            }
+            if (gitInfo.pullRequest) {
+              const prLabel = `PR #${gitInfo.pullRequest.number}`;
+              const linkedPr = getCapabilities().hyperlinks
+                ? hyperlink(prLabel, gitInfo.pullRequest.url)
+                : prLabel;
+              git += ` ${theme.fg("mdLink", linkedPr)}`;
+            }
+            groups.push(git);
           }
 
-          const contextPercent =
-            modelInfo.contextPercent === null
-              ? "?"
-              : `${Math.round(modelInfo.contextPercent)}`;
-          const contextWindow =
-            modelInfo.contextWindow > 0
-              ? formatTokens(modelInfo.contextWindow)
-              : "?";
-          const tps =
-            modelInfo.tokensPerSecond === null
-              ? "— tok/s"
-              : `${Math.round(modelInfo.tokensPerSecond)} tok/s`;
-          const usage = `${contextPercent}%/${contextWindow} · $${modelInfo.cost.toFixed(2)} · ${tps}`;
           const model = modelInfo.provider
-            ? `${modelInfo.provider}/${modelInfo.modelId} · ${modelInfo.thinking}`
-            : modelInfo.modelId;
+            ? `${theme.fg("muted", modelInfo.provider)}${theme.fg("dim", "/")}${theme.fg("toolTitle", modelInfo.modelId)}`
+            : theme.fg("toolTitle", modelInfo.modelId);
+          groups.push(
+            `${model} ${theme.fg(effortColor(modelInfo.thinking), `(${modelInfo.thinking})`)}`,
+          );
+
+          // Context headroom drains left to right, so a shrinking bar and a
+          // shrinking number say the same thing.
+          const percentLeft =
+            modelInfo.contextPercent === null
+              ? null
+              : Math.max(0, 100 - Math.round(modelInfo.contextPercent));
+          const gaugeColor =
+            percentLeft === null ? "dim" : headroomColor(percentLeft);
+          const filled =
+            percentLeft === null
+              ? 0
+              : Math.round((percentLeft / 100) * GAUGE_WIDTH);
+          const gauge = [
+            theme.fg("dim", "["),
+            theme.fg(gaugeColor, GAUGE_FULL.repeat(filled)),
+            theme.fg("dim", GAUGE_EMPTY.repeat(GAUGE_WIDTH - filled)),
+            theme.fg("dim", "]"),
+          ].join("");
+          const percentLabel = theme.fg(
+            gaugeColor,
+            percentLeft === null ? "—%" : `${percentLeft}%`,
+          );
+          const cost = theme.fg("muted", `$${modelInfo.cost.toFixed(2)}`);
 
           const lines = [
-            columns(directory, theme.fg("muted", model), width),
-            columns(theme.fg("muted", usage), theme.fg("muted", git), width),
+            columns(
+              groups.join(diamond),
+              `${gauge} ${percentLabel} ${cost}`,
+              width,
+            ),
           ];
 
           // Extension statuses render after the two dashboard lines, one per row.
