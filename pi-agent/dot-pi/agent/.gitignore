@@ -1,5 +1,11 @@
 node_modules/
 bin/
+
+# Machine-local model choices. Deliberately never tracked: the right models
+# differ per machine (Claude here, Copilot CLI at work, whatever comes next).
+extensions/*/routing.local.json
+extensions/*/config.private.json
+extensions/*/config.private.json.*.tmp
 sessions/
 auth.json
 trust.json

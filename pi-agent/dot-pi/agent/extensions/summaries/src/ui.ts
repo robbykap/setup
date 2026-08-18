@@ -11,6 +11,7 @@ import {
   type ModelThinkingLevel,
 } from "@earendil-works/pi-ai";
 import { Box, Markdown, Text } from "@earendil-works/pi-tui";
+import { buildModelChoices } from "../../shared/model-choices.ts";
 import type { ReasoningLevel, SummaryConfig } from "./config.ts";
 import type { RunRecap } from "./summarizer.ts";
 
@@ -74,9 +75,7 @@ export async function openModelPicker(
   ctx: ExtensionCommandContext,
   _config: SummaryConfig,
 ) {
-  const models = [...ctx.modelRegistry.getAvailable()].sort((a, b) =>
-    `${a.provider}/${a.id}`.localeCompare(`${b.provider}/${b.id}`),
-  );
+  const models = [...ctx.modelRegistry.getAvailable()];
   if (models.length === 0) {
     ctx.ui.notify(
       "No configured models are available for run recaps.",
@@ -84,9 +83,20 @@ export async function openModelPicker(
     );
     return undefined;
   }
-  const labels = models.map((model) => `${model.provider}/${model.id}`);
-  const selected = await ctx.ui.select("Summary model", labels);
-  return selected === undefined ? undefined : models[labels.indexOf(selected)];
+
+  // Shared with /routing so model lists look and sort the same everywhere:
+  // grouped by provider, cheapest first, with context and price shown.
+  const choices = buildModelChoices(models, {
+    selected: [`${_config.provider}/${_config.model}`],
+  });
+  const selected = await ctx.ui.select(
+    "Summary model",
+    choices.map((choice) => choice.label),
+  );
+  if (selected === undefined) return undefined;
+
+  const value = choices.find((choice) => choice.label === selected)?.value;
+  return models.find((model) => `${model.provider}/${model.id}` === value);
 }
 
 export function openReasoningPicker(

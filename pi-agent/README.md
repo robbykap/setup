@@ -46,16 +46,37 @@ tool names — pi refuses to load both.
 | `workflows`            | Multi-phase orchestration in a permission-restricted sandbox |
 | `summaries`            | Automatic run recaps (sends transcript text to a model)     |
 
-## Subagent routing
+## Model configuration
 
-`subagent_spawn` takes an intent (`effort`: `quick` / `standard` / `deep`,
-plus optional `needs`) rather than a model name. `extensions/subagents/routing.json`
-maps each tier to an ordered candidate list; the router picks the first model
-that exists on this machine and satisfies the declared needs.
+Model choices are **machine-local and never tracked**, because the right models
+differ per machine — Claude here, Copilot CLI at work, something else later.
+Nothing in git names a model, so a fresh clone starts unconfigured on purpose.
 
-Adding a provider is a one-line edit to that file. Candidates naming models a
-machine does not have are skipped rather than erroring, so one config works
-everywhere. Run `/routing` to see what each tier resolves to locally.
+| Command          | Configures                                    | Writes                                     |
+| ---------------- | --------------------------------------------- | ------------------------------------------ |
+| `/routing`       | Which models each subagent effort tier uses    | `extensions/subagents/routing.local.json`   |
+| `/summary-model` | The model and reasoning level for run recaps   | `extensions/summaries/config.private.json`  |
+
+Both read the live model registry, so at work they list Copilot's models with
+no code change. Both are gitignored.
+
+### Subagent routing
+
+`subagent_spawn` takes an intent (`effort`: `quick` / `standard` / `deep`, plus
+optional `needs`) rather than a model name. Each tier holds an ordered
+candidate list; the router takes the first model that exists here and satisfies
+the declared needs.
+
+An **unconfigured tier refuses to spawn** and tells you to run `/routing`,
+rather than guessing a model you'd be paying for. A *configured* tier whose
+candidates all fail a `needs` check still falls back — to the inherited model
+if eligible, else the cheapest eligible one — since that is about satisfying a
+hard constraint, not guessing a capability tier.
+
+Candidates naming models a machine lacks are skipped rather than erroring, so
+the same file survives moving between machines.
+
+Recaps are similarly inert until `/summary-model` picks a model.
 
 ```sh
 cd ~/.pi/agent/extensions/subagents && npm test   # 34 tests

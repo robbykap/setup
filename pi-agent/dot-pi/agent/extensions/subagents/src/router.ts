@@ -12,11 +12,15 @@
  * pi's `Model`, so tests drive this with plain objects.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ReasoningEffort } from "./domain.ts";
 
-export const ROUTING_CONFIG_FILENAME = "routing.json";
+/**
+ * Machine-local by design: nothing about model choice is tracked in git,
+ * because the right models differ per machine (Claude here, Copilot at work).
+ */
+export const ROUTING_CONFIG_FILENAME = "routing.local.json";
 
 export const EFFORTS = ["quick", "standard", "deep"] as const;
 export type Effort = (typeof EFFORTS)[number];
@@ -65,26 +69,16 @@ export type RouteDecision =
     }
   | { readonly _tag: "Unroutable"; readonly message: string };
 
+/**
+ * No models named. A fresh machine has no configuration, and guessing which
+ * model to bill you for is worse than refusing: `routeModel` returns
+ * Unroutable until `/routing` writes a real config.
+ */
 export const DEFAULT_ROUTING_CONFIG: RoutingConfig = {
   tiers: {
-    quick: {
-      models: [
-        "claude-bridge/claude-haiku-4-5",
-        "claude-bridge/claude-sonnet-4-6",
-      ],
-      thinking: "low",
-    },
-    standard: {
-      models: [
-        "claude-bridge/claude-sonnet-5",
-        "claude-bridge/claude-opus-4-8",
-      ],
-      thinking: "medium",
-    },
-    deep: {
-      models: ["claude-bridge/claude-opus-5", "claude-bridge/claude-fable-5"],
-      thinking: "high",
-    },
+    quick: { models: [], thinking: "low" },
+    standard: { models: [], thinking: "medium" },
+    deep: { models: [], thinking: "high" },
   },
   longContextThreshold: 500_000,
 };
@@ -153,6 +147,18 @@ export function routeModel(
   const needs = request.needs ?? [];
   const tier = config.tiers[effort] ?? DEFAULT_ROUTING_CONFIG.tiers[effort];
   const thinking = effectiveThinking(tier, needs);
+
+  // An unconfigured tier refuses rather than guessing. A *configured* tier
+  // whose candidates all fail `needs` still falls back below: that is about
+  // satisfying a hard constraint, not about picking a capability tier.
+  if (tier.models.length === 0) {
+    return {
+      _tag: "Unroutable",
+      message:
+        `The "${effort}" subagent tier is not configured on this machine. ` +
+        `Run /routing to choose which models it should use.`,
+    };
+  }
 
   const eligible = (model: ModelLike | undefined) =>
     model !== undefined && !unmetNeed(model, needs, config, thinking);
@@ -283,3 +289,56 @@ export function loadRoutingConfig(dir: string): RoutingConfig {
     return DEFAULT_ROUTING_CONFIG;
   }
 }
+
+// --- Config editing ----------------------------------------------------------
+
+/** Stable, human-editable JSON. The file stays hand-editable if preferred. */
+export function serializeRoutingConfig(config: RoutingConfig) {
+  const tiers = Object.fromEntries(
+    EFFORTS.map((effort) => [
+      effort,
+      {
+        models: [...config.tiers[effort].models],
+        thinking: config.tiers[effort].thinking,
+      },
+    ]),
+  );
+  return `${JSON.stringify({ tiers, longContextThreshold: config.longContextThreshold }, null, 2)}\n`;
+}
+
+export function setTierModels(
+  config: RoutingConfig,
+  effort: Effort,
+  models: readonly string[],
+): RoutingConfig {
+  return {
+    ...config,
+    tiers: {
+      ...config.tiers,
+      [effort]: { ...config.tiers[effort], models: [...models] },
+    },
+  };
+}
+
+export function setTierThinking(
+  config: RoutingConfig,
+  effort: Effort,
+  thinking: ReasoningEffort,
+): RoutingConfig {
+  return {
+    ...config,
+    tiers: { ...config.tiers, [effort]: { ...config.tiers[effort], thinking } },
+  };
+}
+
+/** Write `routing.local.json` into `dir`, creating it if absent. */
+export function saveRoutingConfig(dir: string, config: RoutingConfig) {
+  writeFileSync(
+    join(dir, ROUTING_CONFIG_FILENAME),
+    serializeRoutingConfig(config),
+    "utf8",
+  );
+}
+
+/** Thinking levels offered by the `/routing` editor. */
+export const REASONING_LEVELS_FOR_TIERS = THINKING_LEVELS;

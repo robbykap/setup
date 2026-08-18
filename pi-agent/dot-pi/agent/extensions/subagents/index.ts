@@ -55,11 +55,22 @@ import {
   EFFORTS,
   loadRoutingConfig,
   NEEDS,
+  REASONING_LEVELS_FOR_TIERS,
   routeModel,
+  saveRoutingConfig,
+  setTierModels,
+  setTierThinking,
   type Effort,
   type ModelLike,
   type Need,
+  type RoutingConfig,
 } from "./src/router.ts";
+import {
+  buildTierMenu,
+  describeTier,
+  parseTierChoice,
+} from "./src/routing-ui.ts";
+import { buildModelChoices } from "../shared/model-choices.ts";
 import {
   formatActivityStatus,
   formatContextUtilization,
@@ -175,6 +186,106 @@ function routeSpawn(
       ? { provider: ctx.model.provider, id: ctx.model.id }
       : undefined,
   });
+}
+
+/**
+ * Pick an ordered candidate list for one tier. Selection repeats so the first
+ * pick is the preferred model and later picks are fallbacks, which is exactly
+ * the order `routeModel` walks.
+ */
+async function pickTierModels(
+  ctx: ExtensionCommandContext,
+  models: readonly ModelLike[],
+  current: readonly string[],
+) {
+  const chosen: string[] = [];
+  for (;;) {
+    const remaining = buildModelChoices(models, { selected: chosen }).filter(
+      (choice) => !chosen.includes(choice.value),
+    );
+    if (remaining.length === 0) break;
+
+    const position = chosen.length === 0 ? "preferred" : `fallback ${chosen.length}`;
+    const doneLabel =
+      chosen.length === 0 ? "Cancel (keep current)" : `Done (${chosen.length} selected)`;
+    const choice = await ctx.ui.select(
+      `Choose the ${position} model`,
+      [...remaining.map((entry) => entry.label), doneLabel],
+    );
+    if (choice === undefined || choice === doneLabel) break;
+
+    const picked = remaining.find((entry) => entry.label === choice);
+    if (!picked) break;
+    chosen.push(picked.value);
+  }
+  return chosen.length > 0 ? chosen : [...current];
+}
+
+/** The `/routing` dialog loop: pick a tier, edit it, repeat until done. */
+async function runRoutingEditor(
+  ctx: ExtensionCommandContext,
+  models: readonly ModelLike[],
+) {
+  let config = loadRoutingConfig(EXTENSION_DIR);
+  let dirty = false;
+
+  for (;;) {
+    const menu = buildTierMenu(config, models);
+    const choice = await ctx.ui.select(
+      "Subagent routing — choose a tier to configure",
+      menu,
+    );
+    if (choice === undefined) break;
+
+    const effort = parseTierChoice(choice);
+    if (!effort) break;
+
+    const action = await ctx.ui.select(describeTier(effort, config, models), [
+      "Choose models",
+      "Set thinking level",
+      "Clear this tier",
+      "Back",
+    ]);
+    if (action === undefined || action === "Back") continue;
+
+    if (action === "Choose models") {
+      const picked = await pickTierModels(
+        ctx,
+        models,
+        config.tiers[effort].models,
+      );
+      config = setTierModels(config, effort, picked);
+      dirty = true;
+    } else if (action === "Set thinking level") {
+      const level = await ctx.ui.select(
+        `Thinking level for "${effort}"`,
+        [...REASONING_LEVELS_FOR_TIERS],
+      );
+      if (level) {
+        config = setTierThinking(config, effort, level as never);
+        dirty = true;
+      }
+    } else if (action === "Clear this tier") {
+      config = setTierModels(config, effort, []);
+      dirty = true;
+    }
+  }
+
+  if (!dirty) return;
+  try {
+    saveRoutingConfig(EXTENSION_DIR, config);
+    ctx.ui.notify(
+      `Saved routing config.\n${EFFORTS.map((effort) =>
+        describeTier(effort, config, models),
+      ).join("\n")}`,
+      "info",
+    );
+  } catch (error) {
+    ctx.ui.notify(
+      `Could not save routing config: ${error instanceof Error ? error.message : String(error)}`,
+      "error",
+    );
+  }
 }
 
 export default function (pi: ExtensionAPI) {
@@ -772,28 +883,18 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("routing", {
-    description: "Show how subagent effort tiers resolve on this machine",
+    description: "Configure which models each subagent effort tier uses",
     handler: async (_args, ctx: ExtensionCommandContext) => {
       if (!ctx.hasUI) return;
-      const config = loadRoutingConfig(EXTENSION_DIR);
       const models = registrySnapshot(sessionContext ?? ({} as never));
-      const lines: string[] = [
-        `Routing config: ${path.join(EXTENSION_DIR, "routing.json")}`,
-        `Long-context threshold: ${config.longContextThreshold.toLocaleString()} tokens`,
-        `Models visible here: ${models.length}`,
-        "",
-      ];
-      for (const effort of EFFORTS) {
-        const tier = config.tiers[effort];
-        const decision = routeModel(models, config, { effort });
-        const resolved =
-          decision._tag === "Routed"
-            ? `${decision.model} (${decision.reason}, thinking: ${decision.thinking})`
-            : `unroutable — ${decision.message}`;
-        lines.push(`${effort} → ${resolved}`);
-        lines.push(`  candidates: ${tier.models.join(", ") || "(none)"}`);
+      if (models.length === 0) {
+        ctx.ui.notify(
+          "No models are visible in this session, so there is nothing to configure.",
+          "warning",
+        );
+        return;
       }
-      ctx.ui.notify(lines.join("\n"), "info");
+      await runRoutingEditor(ctx, models);
     },
   });
 

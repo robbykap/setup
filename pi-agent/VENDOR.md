@@ -32,12 +32,25 @@ backends granted children unsupervised host access
 models. `src/backends/stub.ts` is retained: it is a test-only fake backend
 that `manager.test.ts` runs against.
 
-`summaries` had its default recap model changed from `openai-codex/gpt-5.6-luna`
-to `claude-bridge/claude-haiku-4-5`: the upstream default names a provider this
-setup does not configure. Override per machine in `config.private.json`.
+`summaries` no longer ships a default recap model. Upstream defaulted to
+`openai-codex/gpt-5.6-luna`, a provider this setup does not configure. Rather
+than swap in another hardcoded model, the default is now empty and recaps stay
+inert until `/summary-model` picks one — recaps run every turn and cost money,
+so guessing is the wrong failure mode. Its picker now uses the shared
+`extensions/shared/model-choices.ts` helper, so model lists look and sort the
+same as `/routing`.
 
-Added: `src/router.ts` and `routing.json` — intent-based, provider-agnostic
-model routing. Design: `docs/superpowers/specs/2026-08-17-subagent-router-design.md`.
+Added: `src/router.ts` and `routing.local.json` — intent-based,
+provider-agnostic model routing. Design:
+`docs/superpowers/specs/2026-08-17-subagent-router-design.md`.
+
+Added: `src/child-providers.ts` — copies the parent session's
+extension-registered providers into each subagent's registry. Without it every
+subagent failed with "No API key found"; see commit 4294685 for the root cause.
+
+Model configuration is machine-local and gitignored (`routing.local.json`,
+`config.private.json`). No tracked file names a model, so a fresh clone starts
+unconfigured and refuses to spawn until `/routing` runs.
 
 The root `package.json` was rewritten rather than copied: `firecrawl` and
 `acorn` dropped as unused by this subset, and `@earendil-works/pi-*` bumped

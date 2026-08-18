@@ -1,14 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_SUMMARY_CONFIG, parseSummaryConfig } from "./src/config.ts";
+import {
+  DEFAULT_SUMMARY_CONFIG,
+  isSummaryConfigured,
+  parseSummaryConfig,
+} from "./src/config.ts";
 
-test("summary config defaults to a cheap model at medium reasoning", () => {
+test("summary config defaults to unconfigured rather than naming a model", () => {
   assert.deepEqual(parseSummaryConfig(undefined), DEFAULT_SUMMARY_CONFIG);
-  assert.deepEqual(DEFAULT_SUMMARY_CONFIG, {
-    provider: "claude-bridge",
-    model: "claude-haiku-4-5",
-    reasoning: "medium",
-  });
+  assert.equal(DEFAULT_SUMMARY_CONFIG.provider, "");
+  assert.equal(DEFAULT_SUMMARY_CONFIG.model, "");
+});
+
+test("the default config reports itself as unconfigured", () => {
+  assert.equal(isSummaryConfigured(DEFAULT_SUMMARY_CONFIG), false);
+});
+
+test("a config naming a provider and model is configured", () => {
+  assert.equal(
+    isSummaryConfigured({
+      provider: "acme",
+      model: "m1",
+      reasoning: "low",
+    }),
+    true,
+  );
 });
 
 test("summary config accepts valid private overrides and rejects partial corruption", () => {

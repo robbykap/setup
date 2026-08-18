@@ -7,7 +7,12 @@ import {
   DEFAULT_ROUTING_CONFIG,
   loadRoutingConfig,
   parseRoutingConfig,
+  ROUTING_CONFIG_FILENAME,
   routeModel,
+  saveRoutingConfig,
+  serializeRoutingConfig,
+  setTierModels,
+  setTierThinking,
   type ModelLike,
   type RoutingConfig,
 } from "./src/router.ts";
@@ -153,7 +158,7 @@ test("a bare model id matches when unambiguous", () => {
   assert.equal(decision._tag === "Routed" && decision.model, "test/cheap");
 });
 
-test("an empty tier falls back to the inherited model", () => {
+test("an unconfigured tier refuses instead of guessing a model", () => {
   const config: RoutingConfig = {
     ...CONFIG,
     tiers: { ...CONFIG.tiers, quick: { models: [], thinking: "low" } },
@@ -162,31 +167,49 @@ test("an empty tier falls back to the inherited model", () => {
     effort: "quick",
     inherited: { provider: "test", id: "mid" },
   });
-  assert.equal(decision._tag === "Routed" && decision.model, "test/mid");
-  assert.equal(decision._tag === "Routed" && decision.reason, "inherited");
+  assert.equal(decision._tag, "Unroutable");
+  assert.match(
+    decision._tag === "Unroutable" ? decision.message : "",
+    /not configured/,
+  );
 });
 
-test("falls back to the inherited model only when it satisfies needs", () => {
+test("the refusal names the command that fixes it", () => {
   const config: RoutingConfig = {
     ...CONFIG,
-    tiers: { ...CONFIG.tiers, quick: { models: [], thinking: "low" } },
+    tiers: { ...CONFIG.tiers, deep: { models: [], thinking: "high" } },
+  };
+  const decision = routeModel(REGISTRY, config, { effort: "deep" });
+  assert.match(
+    decision._tag === "Unroutable" ? decision.message : "",
+    /\/routing/,
+  );
+});
+
+test("a configured tier whose candidates fail needs falls back to inherited", () => {
+  const config: RoutingConfig = {
+    ...CONFIG,
+    tiers: { ...CONFIG.tiers, quick: { models: ["test/cheap"], thinking: "low" } },
   };
   const decision = routeModel(REGISTRY, config, {
     effort: "quick",
     needs: ["long-context"],
-    inherited: { provider: "test", id: "mid" },
+    inherited: { provider: "test", id: "big" },
   });
   assert.equal(decision._tag === "Routed" && decision.model, "test/big");
-  assert.equal(decision._tag === "Routed" && decision.reason, "cheapest");
+  assert.equal(decision._tag === "Routed" && decision.reason, "inherited");
 });
 
-test("cheapest eligible model wins when there is nothing to inherit", () => {
+test("a configured tier falls back to cheapest eligible with nothing to inherit", () => {
   const config: RoutingConfig = {
     ...CONFIG,
-    tiers: { ...CONFIG.tiers, quick: { models: [], thinking: "low" } },
+    tiers: { ...CONFIG.tiers, quick: { models: ["test/cheap"], thinking: "low" } },
   };
-  const decision = routeModel(REGISTRY, config, { effort: "quick" });
-  assert.equal(decision._tag === "Routed" && decision.model, "test/cheap");
+  const decision = routeModel(REGISTRY, config, {
+    effort: "quick",
+    needs: ["long-context"],
+  });
+  assert.equal(decision._tag === "Routed" && decision.model, "test/big");
   assert.equal(decision._tag === "Routed" && decision.reason, "cheapest");
 });
 
@@ -242,6 +265,31 @@ test("parseRoutingConfig keeps valid tiers and fills missing ones", () => {
   );
 });
 
+test("the built-in default names no models, so a fresh machine must configure", () => {
+  for (const effort of ["quick", "standard", "deep"] as const) {
+    assert.deepEqual(DEFAULT_ROUTING_CONFIG.tiers[effort].models, []);
+  }
+});
+
+test("serializeRoutingConfig round-trips through parseRoutingConfig", () => {
+  const parsed = parseRoutingConfig(serializeRoutingConfig(CONFIG));
+  assert.deepEqual(parsed, CONFIG);
+});
+
+test("setTierModels replaces one tier and leaves the others alone", () => {
+  const next = setTierModels(CONFIG, "quick", ["x/y", "z/w"]);
+  assert.deepEqual(next.tiers.quick.models, ["x/y", "z/w"]);
+  assert.equal(next.tiers.quick.thinking, CONFIG.tiers.quick.thinking);
+  assert.deepEqual(next.tiers.deep, CONFIG.tiers.deep);
+});
+
+test("setTierThinking replaces one tier's level and leaves models alone", () => {
+  const next = setTierThinking(CONFIG, "deep", "max");
+  assert.equal(next.tiers.deep.thinking, "max");
+  assert.deepEqual(next.tiers.deep.models, CONFIG.tiers.deep.models);
+  assert.equal(next.tiers.quick.thinking, CONFIG.tiers.quick.thinking);
+});
+
 test("parseRoutingConfig rejects a tier with a non-string model entry", () => {
   const parsed = parseRoutingConfig(
     JSON.stringify({ tiers: { quick: { models: [3], thinking: "low" } } }),
@@ -249,14 +297,20 @@ test("parseRoutingConfig rejects a tier with a non-string model entry", () => {
   assert.deepEqual(parsed.tiers.quick, DEFAULT_ROUTING_CONFIG.tiers.quick);
 });
 
-test("loadRoutingConfig reads routing.json from the extension directory", () => {
+test("loadRoutingConfig reads the machine-local config from the extension directory", () => {
   const dir = mkdtempSync(join(tmpdir(), "routing-"));
   writeFileSync(
-    join(dir, "routing.json"),
+    join(dir, ROUTING_CONFIG_FILENAME),
     JSON.stringify({ tiers: { deep: { models: ["x/y"], thinking: "max" } } }),
   );
   const config = loadRoutingConfig(dir);
   assert.deepEqual(config.tiers.deep, { models: ["x/y"], thinking: "max" });
+});
+
+test("saveRoutingConfig writes a file loadRoutingConfig can read back", () => {
+  const dir = mkdtempSync(join(tmpdir(), "routing-"));
+  saveRoutingConfig(dir, CONFIG);
+  assert.deepEqual(loadRoutingConfig(dir), CONFIG);
 });
 
 test("loadRoutingConfig falls back to defaults when the file is missing", () => {

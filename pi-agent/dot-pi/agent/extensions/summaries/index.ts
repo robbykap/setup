@@ -2,7 +2,11 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { loadSummaryConfig, saveSummaryConfig } from "./src/config.ts";
+import {
+  isSummaryConfigured,
+  loadSummaryConfig,
+  saveSummaryConfig,
+} from "./src/config.ts";
 import { summarizeRun } from "./src/summarizer.ts";
 import {
   buildFallbackRecap,
@@ -45,6 +49,8 @@ export default function (pi: ExtensionAPI) {
   const activeSummaries = new Map<AbortController, Promise<void>>();
   let sessionActive = false;
   let statusContext: ExtensionContext | undefined;
+  /** Reset per session so the reminder reappears next launch, not every turn. */
+  let unconfiguredNoticeShown = false;
 
   const updateStatus = () => {
     statusContext?.ui.setStatus(
@@ -63,6 +69,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     sessionActive = ctx.mode === "tui";
     statusContext = ctx;
+    unconfiguredNoticeShown = false;
     runBoundary.reset();
   });
 
@@ -82,6 +89,19 @@ export default function (pi: ExtensionAPI) {
     if (entries.length === 0) return;
 
     const config = loadSummaryConfig();
+    // No model configured on this machine: stay inert rather than billing a
+    // guess. Said once per session so it prompts action without nagging.
+    if (!isSummaryConfigured(config)) {
+      if (!unconfiguredNoticeShown) {
+        unconfiguredNoticeShown = true;
+        ctx.ui.notify(
+          "Run recaps are off until a summary model is chosen. Run /summary-model to pick one.",
+          "info",
+        );
+      }
+      return;
+    }
+
     const controller = new AbortController();
     statusContext = ctx;
     const task = (async () => {

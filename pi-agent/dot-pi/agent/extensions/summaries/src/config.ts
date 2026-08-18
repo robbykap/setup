@@ -29,14 +29,20 @@ export interface SummaryConfig {
 }
 
 /**
- * Recaps run on every turn, so the default is a cheap model on a provider this
- * setup actually configures. Override per machine in `config.private.json`.
+ * Deliberately names no model. Recaps run on every turn and cost money, and
+ * the right model differs per machine, so an unconfigured install stays inert
+ * until `/summary-model` picks one rather than silently billing a guess.
  */
 export const DEFAULT_SUMMARY_CONFIG: SummaryConfig = {
-  provider: "claude-bridge",
-  model: "claude-haiku-4-5",
+  provider: "",
+  model: "",
   reasoning: "medium",
 };
+
+/** False until a machine-local config names a provider and model. */
+export function isSummaryConfigured(config: SummaryConfig) {
+  return config.provider.trim() !== "" && config.model.trim() !== "";
+}
 
 const extensionDirectory = dirname(dirname(fileURLToPath(import.meta.url)));
 export const PRIVATE_CONFIG_PATH = join(
