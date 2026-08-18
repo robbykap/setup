@@ -60,3 +60,14 @@ test("a relative path resolves against the child's cwd, not the parent's", () =>
   });
   assert.ok(store.get("sub/b.ts"), `expected sub/b.ts, got ${store.list().map((c) => c.path).join(",")}`);
 });
+
+test("..config.ts inside the cwd keys relative, not absolute", () => {
+  const store = createFileEditStore();
+  const events = bus();
+  observeChildFiles(events as never, store, "/repo");
+  events.emit("dashboard:child-file", {
+    path: "/repo/..config.ts",
+    origin: { kind: "workflow", label: "run" },
+  });
+  assert.ok(store.get("..config.ts"), `expected ..config.ts, got ${store.list().map((c) => c.path).join(",")}`);
+});

@@ -14,17 +14,11 @@
 import * as path from "node:path";
 import { parseUnifiedPatch } from "./diff.ts";
 import type { FileChange, Hunk } from "./domain.ts";
+import { storeKeyFor } from "./paths.ts";
 import type { FileEditStore } from "./store.ts";
 
 /** This session made the change — as opposed to a subagent or a workflow. */
 export const SELF = { kind: "self" } as const;
-
-/** Store keys are cwd-relative: that is what the user reads and types. */
-export function relativeToCwd(cwd: string, target: string): string {
-  const absolute = path.isAbsolute(target) ? target : path.join(cwd, target);
-  const relative = path.relative(cwd, absolute);
-  return relative.startsWith("..") ? absolute : relative;
-}
 
 /** What one tool call did to one file. */
 export interface CallDelta {
@@ -59,7 +53,7 @@ export function measureEdit(cwd: string): Measure<EditParams, EditResult> {
     const patch = result.details?.patch;
     const parsed = patch ? parseUnifiedPatch(patch) : null;
     return {
-      path: relativeToCwd(cwd, params.path),
+      path: storeKeyFor(cwd, params.path),
       hunks: parsed?.hunks ?? [],
       added: parsed?.added ?? 0,
       removed: parsed?.removed ?? 0,
@@ -85,7 +79,7 @@ export function measureWrite(
       : path.join(cwd, params.path);
     const isNew = !exists(absolute);
     return () => ({
-      path: relativeToCwd(cwd, params.path),
+      path: storeKeyFor(cwd, params.path),
       hunks: [],
       added: params.content.split("\n").length,
       removed: 0,

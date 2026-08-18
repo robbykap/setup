@@ -10,6 +10,7 @@ import {
   CHILD_FILE_CHANNEL,
   isChildFileEvent,
 } from "../../shared/dashboard-state.ts";
+import { storeKeyFor } from "./paths.ts";
 import type { FileEditStore } from "./store.ts";
 
 export function observeChildFiles(
@@ -22,9 +23,8 @@ export function observeChildFiles(
     const absolute = path.isAbsolute(value.path)
       ? value.path
       : path.join(value.cwd ?? cwd, value.path);
-    const relative = path.relative(cwd, absolute);
     store.recordExternal({
-      path: relative.startsWith("..") ? absolute : relative,
+      path: storeKeyFor(cwd, absolute),
       origin: value.origin,
       at: Date.now(),
     });

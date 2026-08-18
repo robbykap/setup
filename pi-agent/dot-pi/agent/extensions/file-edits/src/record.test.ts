@@ -5,7 +5,6 @@ import {
   executeAndRecord,
   measureEdit,
   measureWrite,
-  relativeToCwd,
 } from "./record.ts";
 import { createFileEditStore } from "./store.ts";
 
@@ -213,8 +212,17 @@ test("the delegated result is passed through untouched", async () => {
   });
 });
 
-test("store keys are cwd-relative, and stay absolute when outside the cwd", () => {
-  assert.equal(relativeToCwd(CWD, "src/a.ts"), "src/a.ts");
-  assert.equal(relativeToCwd(CWD, "/repo/src/a.ts"), "src/a.ts");
-  assert.equal(relativeToCwd(CWD, "/etc/hosts"), "/etc/hosts");
+test("an edit's store key comes from storeKeyFor", async () => {
+  const store = createFileEditStore();
+  const calls = createCallRecords();
+  await executeAndRecord({
+    toolCallId: "call-1",
+    params: { path: "/repo/src/a.ts" },
+    run: async () => editResult(1, 0),
+    measure: measureEdit(CWD),
+    store,
+    calls,
+    at: 1,
+  });
+  assert.equal(calls.get("call-1")!.path, "src/a.ts");
 });
