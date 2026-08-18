@@ -74,8 +74,8 @@ export default function (pi: ExtensionAPI) {
       .then((manager) => {
         manager.view.setOnSettled(onSettled);
         unsubStatus?.();
-        unsubStatus = manager.view.subscribe(() => updateWidget(manager));
-        updateWidget(manager);
+        unsubStatus = manager.view.subscribe(() => updateStatus(manager));
+        updateStatus(manager);
         return manager;
       });
     return managerPromise;
@@ -86,15 +86,15 @@ export default function (pi: ExtensionAPI) {
    * only touches setStatus when the running count actually changes —
    * publishing status updates hundreds of times a second would be wasteful
    * for no visible difference. */
-  let widgetRunning = 0;
-  const updateWidget = (manager: TerminalManagerShape) => {
+  let statusRunning = 0;
+  const updateStatus = (manager: TerminalManagerShape) => {
     if (!ui) return;
     try {
       const running = manager.view
         .list()
         .filter((snap) => snap.status === "running").length;
-      if (running === widgetRunning) return;
-      widgetRunning = running;
+      if (running === statusRunning) return;
+      statusRunning = running;
       if (running === 0) {
         ui.setStatus(STATUS_KEY, undefined);
         return;
@@ -190,7 +190,7 @@ export default function (pi: ExtensionAPI) {
     } catch {
       // UI may already be gone.
     }
-    widgetRunning = 0;
+    statusRunning = 0;
     ui = undefined;
     const closing = runtime;
     runtime = undefined;
