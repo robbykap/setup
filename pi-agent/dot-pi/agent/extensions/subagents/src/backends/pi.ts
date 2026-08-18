@@ -15,15 +15,16 @@ import type { AssistantMessage, Message, Model } from "@earendil-works/pi-ai";
 import type {
   AgentSession,
   AgentSessionEvent,
-  ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
 import {
   createAgentSession,
   DefaultResourceLoader,
   getAgentDir,
+  ModelRegistry,
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { copyRegisteredProviders } from "../child-providers.ts";
 import type { Cause, Scope } from "effect";
 import { Effect, Queue, Stream } from "effect";
 import type { SubagentBackend, SubagentSession } from "../backend.ts";
@@ -294,6 +295,16 @@ const makePiSession = (
           thinkingLevel,
           excludeTools: [...CHILD_EXCLUDED_TOOL_NAMES],
         });
+
+        // The child got a fresh ModelRuntime, so extension-registered
+        // providers from the parent are missing and their models would fail
+        // auth. Copy them across before the first run. See child-providers.ts.
+        if (task.parent.modelRegistry) {
+          copyRegisteredProviders(
+            task.parent.modelRegistry,
+            new ModelRegistry(session.modelRuntime),
+          );
+        }
         // Start child extension session hooks/resources in headless mode.
         // A rejection here would otherwise leak the freshly created session:
         // the scope finalizer that owns cleanup is only registered later.
