@@ -44,6 +44,7 @@ tool names — pi refuses to load both.
 | `ui-customization`     | Bottom bar layout                                           |
 | `copy-all`             | Copy the whole conversation                                 |
 | `workflows`            | Multi-phase orchestration in a permission-restricted sandbox |
+| `summaries`            | Automatic run recaps (sends transcript text to a model)     |
 
 ## Subagent routing
 

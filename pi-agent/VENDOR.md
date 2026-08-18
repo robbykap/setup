@@ -13,14 +13,13 @@ diff — a clean audit of one commit says nothing about the next.
 ## What was taken
 
 `file-search`, `git-info`, `ui-customization`, `model-info`, `copy-all`,
-`ask-user`, `background-terminals`, `workflows`, plus the `extensions/shared/`
+`ask-user`, `background-terminals`, `workflows`, `summaries`, plus the `extensions/shared/`
 files those depend on, and the `background-terminals` skill.
 
 ## What was deliberately not taken
 
 - `firecrawl-search` — requires a paid API key and sends queries off-machine
 - `spark-strict-tools` — only fires for the `spark-deepseek` provider
-- `summaries` — not selected
 - `themes/github-dark-default.json` — not selected
 
 ## What was modified
@@ -32,6 +31,10 @@ backends granted children unsupervised host access
 `sandbox: "danger-full-access"`) and could each run only their own vendor's
 models. `src/backends/stub.ts` is retained: it is a test-only fake backend
 that `manager.test.ts` runs against.
+
+`summaries` had its default recap model changed from `openai-codex/gpt-5.6-luna`
+to `claude-bridge/claude-haiku-4-5`: the upstream default names a provider this
+setup does not configure. Override per machine in `config.private.json`.
 
 Added: `src/router.ts` and `routing.json` — intent-based, provider-agnostic
 model routing. Design: `docs/superpowers/specs/2026-08-17-subagent-router-design.md`.
