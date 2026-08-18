@@ -55,20 +55,23 @@ interface ActivityCounts {
   failed: number;
 }
 
-const SQUARE = "■";
+const GLYPH = "⌘";
 
-export function formatActivityStatus(theme: Theme, counts: ActivityCounts) {
+export function formatActivityStatus(
+  theme: Theme,
+  counts: ActivityCounts,
+): string | undefined {
   const parts: string[] = [];
   if (counts.running > 0) {
-    parts.push(theme.fg("warning", `${SQUARE} ${counts.running} running`));
+    parts.push(theme.fg("warning", `${counts.running} running`));
   }
   if (counts.done > 0) {
-    parts.push(theme.fg("success", `${SQUARE} ${counts.done} done`));
+    parts.push(theme.fg("success", `${counts.done} done`));
   }
   if (counts.failed > 0) {
-    parts.push(theme.fg("error", `${SQUARE} ${counts.failed} failed`));
+    parts.push(theme.fg("error", `${counts.failed} failed`));
   }
-  parts.push(theme.fg("accent", "/subagents") + theme.fg("dim", " to view"));
+  if (parts.length === 0) return undefined;
 
-  return `${theme.fg("muted", "subagents:")} ${parts.join(theme.fg("dim", " · "))}`;
+  return `${theme.fg("accent", GLYPH)} ${parts.join(theme.fg("dim", " · "))}`;
 }
