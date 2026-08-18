@@ -1922,17 +1922,16 @@ export function formatAge(elapsedMs: number): string {
   return `${minutes}:${String(seconds).padStart(2, "0")} ago`;
 }
 
+/** Filtering reorders by match quality; with no query the store's
+ * most-recent-first order is preserved. fuzzyFilter lowercases both sides, so
+ * matching is case-insensitive, and it treats whitespace and slashes as token
+ * separators. */
 export function filterChanges(
   changes: ReadonlyArray<FileChange>,
   query: string,
 ): ReadonlyArray<FileChange> {
   if (!query.trim()) return changes;
-  const matches = fuzzyFilter(
-    changes.map((change) => change.path),
-    query,
-  );
-  const ranked = new Set(matches.map((match) => match.text ?? match));
-  return changes.filter((change) => ranked.has(change.path));
+  return fuzzyFilter([...changes], query, (change) => change.path);
 }
 
 export function renderPickerRow(
@@ -1968,11 +1967,6 @@ export function renderPickerRow(
   );
 }
 ```
-
-> **`fuzzyFilter`'s exact return shape** is `FuzzyMatch[]` from
-> `@earendil-works/pi-tui`. Before running the tests, open its declaration
-> (`pi-tui/dist/fuzzy.d.ts`) and adjust the `match.text ?? match` line to the
-> real property name. Do not guess — read it.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
