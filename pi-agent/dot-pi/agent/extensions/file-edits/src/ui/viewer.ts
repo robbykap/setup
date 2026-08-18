@@ -16,6 +16,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { pairRows, type SplitRow } from "../diff.ts";
 import type { DiffLine, FileChange } from "../domain.ts";
 import { iconFor, paintIcon } from "../icons.ts";
+import { wordSpans } from "../intraline.ts";
 import type { FileEditStore } from "../store.ts";
 
 export type ViewMode = "stacked" | "split";
@@ -117,8 +118,33 @@ class DiffViewer implements Component {
     }
   }
 
+  /** Paint a line, inverting the words that differ from its counterpart. */
+  private paint(line: DiffLine, counterpart: string | undefined): string {
+    const color = lineColor(line.kind);
+    if (counterpart === undefined || line.kind === "context") {
+      return this.theme.fg(color, line.text);
+    }
+    const spans =
+      line.kind === "remove"
+        ? wordSpans(line.text, counterpart).removed
+        : wordSpans(counterpart, line.text).added;
+    return spans
+      .map((span) =>
+        span.changed
+          ? this.theme.inverse(this.theme.fg(color, span.text))
+          : this.theme.fg(color, span.text),
+      )
+      .join("");
+  }
+
   private stackedLines(change: FileChange, width: number): string[] {
     const lines: string[] = [];
+    const counterparts = new Map<DiffLine, string>();
+    for (const row of pairRows(change.hunks)) {
+      if (row.separator || !row.left || !row.right || row.left === row.right) continue;
+      counterparts.set(row.left, row.right.text);
+      counterparts.set(row.right, row.left.text);
+    }
     change.hunks.forEach((hunk, index) => {
       if (index > 0) lines.push(this.theme.fg("dim", "─".repeat(width)));
       for (const line of hunk.lines) {
@@ -127,10 +153,8 @@ class DiffViewer implements Component {
           truncateToWidth(
             this.theme.fg("dim", String(number).padStart(4)) +
               " " +
-              this.theme.fg(
-                lineColor(line.kind),
-                `${marker(line.kind)} ${line.text}`,
-              ),
+              this.theme.fg(lineColor(line.kind), `${marker(line.kind)} `) +
+              this.paint(line, counterparts.get(line)),
             width,
           ),
         );
@@ -141,12 +165,12 @@ class DiffViewer implements Component {
 
   private splitLines(change: FileChange, width: number): string[] {
     const pane = Math.floor((width - 1) / 2);
-    const cell = (line: DiffLine | undefined) => {
+    const cell = (line: DiffLine | undefined, counterpart: string | undefined) => {
       if (!line) return " ".repeat(pane);
       const body = truncateToWidth(
         this.theme.fg("dim", String(line.newLine ?? line.oldLine ?? 0).padStart(4)) +
           " " +
-          this.theme.fg(lineColor(line.kind), line.text),
+          this.paint(line, counterpart),
         pane,
       );
       return body + " ".repeat(Math.max(0, pane - visibleWidth(body)));
@@ -155,7 +179,7 @@ class DiffViewer implements Component {
     return pairRows(change.hunks).map((row: SplitRow) =>
       row.separator
         ? this.theme.fg("dim", "─".repeat(width))
-        : `${cell(row.left)}${this.theme.fg("border", "│")}${cell(row.right)}`,
+        : `${cell(row.left, row.right?.text)}${this.theme.fg("border", "│")}${cell(row.right, row.left?.text)}`,
     );
   }
 
