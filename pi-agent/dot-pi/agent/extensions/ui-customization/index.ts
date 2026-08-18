@@ -21,6 +21,7 @@ import {
   isGitInfoState,
   isModelInfoState,
 } from "../shared/dashboard-state.ts";
+import { composeStatusBar } from "../shared/status-bar.ts";
 
 type Rgb = [number, number, number];
 interface RenderableNode {
@@ -42,6 +43,7 @@ const BRANCH = "⎇";
 // both directions rather than additions.
 const DIRTY = "±";
 const GAUGE_WIDTH = 10;
+const STATUS_WIDGET_KEY = "shared-status-bar";
 const GAUGE_FULL = "▰";
 const GAUGE_EMPTY = "▱";
 
@@ -258,17 +260,21 @@ export default function uiCustomization(pi: ExtensionAPI) {
   let requestRender: (() => void) | undefined;
   let activeTui: DashboardTui | undefined;
   let themeRemovalTimers: Array<ReturnType<typeof setTimeout>> = [];
+  let footerData: ReadonlyFooterDataProvider | undefined;
+  let statusContext: ExtensionContext | undefined;
 
   const stopModelListener = pi.events.on(MODEL_INFO_CHANNEL, (value) => {
     if (!isModelInfoState(value)) return;
     modelInfo = value;
     requestRender?.();
+    refreshStatusBar();
   });
 
   const stopGitListener = pi.events.on(GIT_INFO_CHANNEL, (value) => {
     if (!isGitInfoState(value)) return;
     gitInfo = value;
     requestRender?.();
+    refreshStatusBar();
   });
 
   function scheduleThemeRemoval(tui: DashboardTui) {
@@ -284,7 +290,27 @@ export default function uiCustomization(pi: ExtensionAPI) {
     }
   }
 
+  /** One shared line above the editor. Cleared entirely when nothing is
+   * active, so the row does not sit there empty. */
+  function refreshStatusBar() {
+    const ctx = statusContext;
+    if (!ctx || ctx.mode !== "tui" || !footerData) return;
+    const statuses = footerData.getExtensionStatuses();
+    if (statuses.size === 0) {
+      ctx.ui.setWidget(STATUS_WIDGET_KEY, undefined);
+      return;
+    }
+    ctx.ui.setWidget(STATUS_WIDGET_KEY, (_tui, theme) => ({
+      render(width: number) {
+        const line = composeStatusBar(statuses, width, theme);
+        return line ? [line] : [];
+      },
+      invalidate() {},
+    }));
+  }
+
   function install(ctx: ExtensionContext) {
+    statusContext = ctx;
     if (ctx.mode !== "tui") return;
 
     ctx.ui.setHeader((tui) => {
@@ -302,8 +328,9 @@ export default function uiCustomization(pi: ExtensionAPI) {
       };
     });
 
-    ctx.ui.setFooter((tui, theme, footerData: ReadonlyFooterDataProvider) => {
+    ctx.ui.setFooter((tui, theme, footer: ReadonlyFooterDataProvider) => {
       requestRender = () => tui.requestRender();
+      footerData = footer;
 
       return {
         invalidate() {},
@@ -375,17 +402,6 @@ export default function uiCustomization(pi: ExtensionAPI) {
             ),
           ];
 
-          // Extension statuses render after the two dashboard lines, one per row.
-          const statuses = footerData.getExtensionStatuses();
-          const statusLines = Array.from(statuses.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .flatMap(([, text]) => text.split("\n"));
-          for (const statusLine of statusLines) {
-            lines.push(
-              truncateToWidth(statusLine, width, theme.fg("dim", "...")),
-            );
-          }
-
           return lines;
         },
       };
@@ -393,6 +409,7 @@ export default function uiCustomization(pi: ExtensionAPI) {
 
     ctx.ui.setTitle(`pi · ${title}`);
     pi.events.emit(REFRESH_CHANNEL, undefined);
+    refreshStatusBar();
   }
 
   pi.on("session_start", (_event, ctx) => {
@@ -416,6 +433,9 @@ export default function uiCustomization(pi: ExtensionAPI) {
     if (ctx.mode === "tui") {
       ctx.ui.setHeader(undefined);
       ctx.ui.setFooter(undefined);
+      ctx.ui.setWidget(STATUS_WIDGET_KEY, undefined);
     }
+    footerData = undefined;
+    statusContext = undefined;
   });
 }
