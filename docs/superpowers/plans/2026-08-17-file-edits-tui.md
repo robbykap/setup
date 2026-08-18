@@ -2015,18 +2015,14 @@ Create `src/ui/picker.ts`:
 
 import type {
   ExtensionCommandContext,
-  ExtensionContext,
+  KeybindingsManager,
+  Theme,
 } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { FileChange } from "../domain.ts";
 import type { FileEditStore } from "../store.ts";
 import { filterChanges, renderPickerRow } from "./picker-rows.ts";
-
-type Theme = ExtensionContext["ui"]["theme"];
-type Keybindings = Parameters<
-  Parameters<ExtensionContext["ui"]["custom"]>[0]
->[2];
 
 class FilePicker implements Component {
   private query = "";
@@ -2037,7 +2033,7 @@ class FilePicker implements Component {
   constructor(
     private tui: TUI,
     private theme: Theme,
-    private keybindings: Keybindings,
+    private keybindings: KeybindingsManager,
     private store: FileEditStore,
     private done: (value: string | null) => void,
   ) {
@@ -2413,7 +2409,8 @@ Create `src/ui/viewer.ts`:
 
 import type {
   ExtensionCommandContext,
-  ExtensionContext,
+  KeybindingsManager,
+  Theme,
 } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
@@ -2421,11 +2418,6 @@ import { pairRows, type SplitRow } from "../diff.ts";
 import type { DiffLine, FileChange } from "../domain.ts";
 import { iconFor, paintIcon } from "../icons.ts";
 import type { FileEditStore } from "../store.ts";
-
-type Theme = ExtensionContext["ui"]["theme"];
-type Keybindings = Parameters<
-  Parameters<ExtensionContext["ui"]["custom"]>[0]
->[2];
 
 export type ViewMode = "stacked" | "split";
 
@@ -2460,7 +2452,7 @@ class DiffViewer implements Component {
   constructor(
     private tui: TUI,
     private theme: Theme,
-    private keybindings: Keybindings,
+    private keybindings: KeybindingsManager,
     private store: FileEditStore,
     private path: string,
     private state: ViewerState,
