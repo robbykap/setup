@@ -19,7 +19,21 @@ import { diffAgainstHead } from "../git-diff.ts";
 import { iconFor, paintIcon } from "../icons.ts";
 import { wordSpans } from "../intraline.ts";
 import type { FileEditStore } from "../store.ts";
+import {
+  bodyHeight,
+  bodyRow,
+  bottomBorder,
+  outerLine,
+  topBorder,
+} from "./frame.ts";
 import { siblingPath } from "./navigation.ts";
+
+function configuredKeys(
+  keybindings: KeybindingsManager,
+  binding: Parameters<KeybindingsManager["getKeys"]>[0],
+) {
+  return keybindings.getKeys(binding).join("/") || "unbound";
+}
 
 export type ViewMode = "stacked" | "split";
 
@@ -46,7 +60,7 @@ function marker(kind: DiffLine["kind"]) {
   return " ";
 }
 
-class DiffViewer implements Component {
+export class DiffViewer implements Component {
   private tui: TUI;
   private theme: Theme;
   private keybindings: KeybindingsManager;
@@ -200,6 +214,9 @@ class DiffViewer implements Component {
     );
   }
 
+  /** Title line, two borders, key legend. */
+  private static readonly CHROME = 4;
+
   render(width: number): string[] {
     const theme = this.theme;
     const change = this.change();
@@ -213,18 +230,28 @@ class DiffViewer implements Component {
         ? theme.bold(theme.fg("accent", `[${name}]`))
         : theme.fg("dim", name);
 
-    const heading =
-      `${paintIcon(iconFor(this.path))} ${theme.bold(theme.fg("text", this.path))} ` +
+    // Title outside the box: file on the left, counts and mode on the right.
+    const left =
+      `${paintIcon(iconFor(this.path))} ${theme.bold(theme.fg("text", this.path))}` +
       (change
-        ? `${theme.fg("toolDiffAdded", `+${change.added}`)} ${theme.fg("toolDiffRemoved", `−${change.removed}`)} `
-        : "") +
+        ? `  ${theme.fg("toolDiffAdded", `+${change.added}`)} ${theme.fg("toolDiffRemoved", `−${change.removed}`)}`
+        : "");
+    const right =
       `${label("stacked")} ${label("split")}` +
       (narrow ? theme.fg("dim", "  (too narrow to split)") : "");
+    const gap = Math.max(
+      1,
+      width - visibleWidth(left) - visibleWidth(right) - 4,
+    );
+
+    const position =
+      this.paths.length > 1
+        ? `${this.paths.indexOf(this.path) + 1}/${this.paths.length}`
+        : "";
 
     const lines: string[] = [
-      theme.fg("border", "╭─ ") +
-        truncateToWidth(heading, inner - 2) +
-        theme.fg("border", " ─╮"),
+      outerLine(width, `  ${left}${" ".repeat(gap)}${right}  `),
+      topBorder(theme, width, position),
     ];
 
     const body = !change
@@ -235,28 +262,37 @@ class DiffViewer implements Component {
           ? this.splitLines(change, inner - 2)
           : this.stackedLines(change, inner - 2);
 
-    const height = Math.max(4, (this.tui.terminal.rows || 30) - 6);
-    this.offset = Math.max(0, Math.min(this.offset, Math.max(0, body.length - height)));
+    const height = bodyHeight(this.tui.terminal.rows, DiffViewer.CHROME);
+    this.offset = Math.max(
+      0,
+      Math.min(this.offset, Math.max(0, body.length - height)),
+    );
 
-    for (const line of body.slice(this.offset, this.offset + height)) {
-      const padding = " ".repeat(Math.max(0, inner - 2 - visibleWidth(line)));
-      lines.push(
-        theme.fg("border", "│ ") + line + padding + theme.fg("border", " │"),
-      );
+    // Always emit `height` rows, blank ones included, so the panel keeps its
+    // shape whether the diff is three lines or three hundred.
+    for (let index = 0; index < height; index += 1) {
+      const line = body[this.offset + index];
+      lines.push(bodyRow(theme, width, line === undefined ? "" : ` ${line}`));
     }
 
-    const hint = theme.fg(
-      "dim",
-      "s split · n/p file · j/k scroll · q close",
+    const scrollable = Math.max(0, body.length - height);
+    lines.push(
+      bottomBorder(
+        theme,
+        width,
+        scrollable > 0
+          ? `${Math.round((this.offset / scrollable) * 100)}%`
+          : "",
+      ),
     );
     lines.push(
-      theme.fg("border", "╰─ ") +
-        hint +
+      outerLine(
+        width,
         theme.fg(
-          "border",
-          "─".repeat(Math.max(0, inner - visibleWidth(hint) - 2)),
-        ) +
-        theme.fg("border", "╯"),
+          "dim",
+          `  s split/stacked · n/p file · j/k scroll · ${configuredKeys(this.keybindings, "tui.select.cancel")}/q close`,
+        ),
+      ),
     );
 
     return lines;

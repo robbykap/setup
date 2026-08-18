@@ -12,9 +12,16 @@ import type {
   Theme,
 } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import type { FileChange } from "../domain.ts";
 import type { FileEditStore } from "../store.ts";
+import {
+  bodyHeight,
+  bodyRow,
+  bottomBorder,
+  outerLine,
+  topBorder,
+} from "./frame.ts";
 import {
   createPickerState,
   filterChanges,
@@ -22,9 +29,16 @@ import {
   renderPickerRow,
   type PickerState,
 } from "./picker-rows.ts";
+
+function configuredKeys(
+  keybindings: KeybindingsManager,
+  binding: Parameters<KeybindingsManager["getKeys"]>[0],
+) {
+  return keybindings.getKeys(binding).join("/") || "unbound";
+}
 import { createViewerState, openDiffViewer, type ViewerState } from "./viewer.ts";
 
-class FilePicker implements Component {
+export class FilePicker implements Component {
   private tui: TUI;
   private theme: Theme;
   private keybindings: KeybindingsManager;
@@ -123,75 +137,74 @@ class FilePicker implements Component {
     }
   }
 
+  /** Title line, two borders, key legend. */
+  private static readonly CHROME = 4;
+
   render(width: number): string[] {
     const theme = this.theme;
     const rows = this.rows();
     reconcilePickerSelection(this.state, rows);
 
-    const inner = width - 2;
     const totals = this.store.totals();
     const now = Date.now();
+    const height = bodyHeight(this.tui.terminal.rows, FilePicker.CHROME);
+    const inner = width - 2;
 
-    const title = theme.fg("accent", " files changed ");
-    const summary = theme.fg(
-      "muted",
-      ` ${totals.files} files  ${theme.fg("toolDiffAdded", `+${totals.added}`)} ${theme.fg("toolDiffRemoved", `−${totals.removed}`)} `,
-    );
-    const fillWidth = Math.max(
-      0,
-      inner - visibleWidth(title) - visibleWidth(summary),
+    // Title outside the box, matching /ps: name on the left, tally on the right.
+    const heading = theme.bold(theme.fg("accent", "Files changed"));
+    const tally =
+      theme.fg("muted", `${totals.files} file${totals.files === 1 ? "" : "s"}  `) +
+      theme.fg("toolDiffAdded", `+${totals.added}`) +
+      " " +
+      theme.fg("toolDiffRemoved", `−${totals.removed}`);
+    const gap = Math.max(
+      1,
+      width - visibleWidth(heading) - visibleWidth(tally) - 4,
     );
 
     const lines: string[] = [
-      theme.fg("border", "╭─") +
-        title +
-        theme.fg("border", "─".repeat(fillWidth)) +
-        summary +
-        theme.fg("border", "─╮"),
+      outerLine(width, `  ${heading}${" ".repeat(gap)}${tally}  `),
+      topBorder(
+        theme,
+        width,
+        this.state.query ? `filter: ${this.state.query}` : "",
+      ),
     ];
 
-    const maxVisible = Math.max(3, (this.tui.terminal.rows || 30) - 8);
+    // Keep the cursor inside the window, clamped so short lists start at 0.
     const start = Math.max(
       0,
-      Math.min(this.state.index - 2, rows.length - maxVisible),
+      Math.min(this.state.index - Math.floor(height / 2), rows.length - height),
     );
-    const visible = rows.slice(start, start + maxVisible);
+    const visible = rows.slice(start, start + height);
 
-    if (visible.length === 0) {
-      lines.push(
-        theme.fg("border", "│ ") +
-          truncateToWidth(theme.fg("dim", "no matching files"), inner - 1) +
-          theme.fg("border", " │"),
-      );
+    for (let index = 0; index < height; index += 1) {
+      const change = visible[index];
+      if (!change) {
+        // Empty rows still get drawn, so the panel keeps its shape.
+        const placeholder =
+          index === 0 && rows.length === 0
+            ? `  ${theme.fg("dim", this.state.query ? "no matching files" : "no files changed yet")}`
+            : "";
+        lines.push(bodyRow(theme, width, placeholder));
+        continue;
+      }
+      const selected = start + index === this.state.index;
+      const marker = selected ? theme.fg("accent", "› ") : "  ";
+      // inner - 2 leaves room for the marker; bodyRow pads the remainder.
+      const body = renderPickerRow(change, inner - 2, theme, now);
+      lines.push(bodyRow(theme, width, marker + body));
     }
 
-    visible.forEach((change, offset) => {
-      const selected = start + offset === this.state.index;
-      const marker = selected ? theme.fg("accent", "› ") : "  ";
-      const body = renderPickerRow(change, inner - 3, theme, now);
-      const padding = " ".repeat(
-        Math.max(0, inner - 3 - visibleWidth(body)),
-      );
-      lines.push(
-        theme.fg("border", "│") +
-          marker +
-          body +
-          padding +
-          theme.fg("border", "│"),
-      );
-    });
-
-    const hint = this.state.query
-      ? theme.fg("accent", `filter: ${this.state.query}`)
-      : theme.fg("dim", "type to filter · enter open · esc close");
+    lines.push(bottomBorder(theme, width));
     lines.push(
-      theme.fg("border", "╰─ ") +
-        hint +
+      outerLine(
+        width,
         theme.fg(
-          "border",
-          "─".repeat(Math.max(0, inner - visibleWidth(hint) - 2)),
-        ) +
-        theme.fg("border", "╯"),
+          "dim",
+          `  ${configuredKeys(this.keybindings, "tui.select.up")}/${configuredKeys(this.keybindings, "tui.select.down")} select · ${configuredKeys(this.keybindings, "tui.select.confirm")} open diff · type to filter · ${configuredKeys(this.keybindings, "tui.select.cancel")} close`,
+        ),
+      ),
     );
 
     return lines;
