@@ -57,7 +57,13 @@ test("the test theme really does emit escape sequences", () => {
   assert.equal(visibleWidth(painted), 1);
 });
 
-const keybindings = getKeybindings();
+/**
+ * A real KeybindingsManager, but cast: pi-tui and pi-coding-agent each expose
+ * a KeybindingsManager type, and depending on where the extension is checked
+ * from (repo vs installed under ~/.pi/agent) they resolve to two different
+ * declarations of the same runtime class. The components want the agent's one.
+ */
+const keybindings = getKeybindings() as never;
 const ROWS = 30;
 /** The whole overlay is terminal rows - 1, leaving pi's footer visible. */
 const EXPECTED_LINES = ROWS - 1;
