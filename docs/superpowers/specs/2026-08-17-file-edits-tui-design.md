@@ -55,9 +55,15 @@ semantics are never reimplemented.
 **Widgets render above the editor by default** (`docs/extensions.md:168`),
 which is where the status bar belongs.
 
-**Child-session tool calls are already observable.** Both
+**Child-session tool calls are observable, but not their diffs.** Both
 `subagents/src/backends/pi.ts:467` and `workflows/runner.ts:547` stream
-`tool_execution_end` events carrying `toolName`. Child edits need no new IPC.
+`tool_execution_end` events carrying `toolName`, so child edits need no new
+IPC. However `ToolExecutionEndEvent` carries only `result`, not `details`
+(`types.d.ts:594-600`), and the subagents backend flattens `args` into a
+single-line `argsPreview`. The path is therefore taken from the child's
+`tool_execution_start` args, and the diff for a child-edited file is computed
+lazily against `git show HEAD:<path>` when the viewer opens. The baseline is
+HEAD rather than the pre-edit buffer.
 
 ## Part 1 — the collapsed edit row
 
@@ -102,11 +108,11 @@ A centered overlay listing every file changed this session, most recent first.
 ╰ type to filter · enter open · esc close ──────────────────────────╯
 ```
 
-Built on pi-tui's `SelectList` with `fuzzyFilter`. The other overlays in this
-repository hand-roll their components, but a filterable list is precisely what
-`SelectList` provides; reimplementing filtering, cursor movement and key
-handling would be duplication. Row content is authored through the list's item
-renderer, so the styling stays ours.
+Hand-rolled as a `Component` in the style of `background-terminals/src/ui/ps.ts`,
+reusing `fuzzyFilter` from pi-tui for filtering. `SelectList` was considered and
+rejected: its item model is a fixed two-column `label` / `description` pair
+(`select-list.d.ts:2-6`), which cannot express the icon, counts, edit-count,
+age and origin columns this list needs.
 
 The `⌘ sa-2` tag marks a file changed by a subagent; workflows are tagged with
 their run label.
@@ -213,8 +219,10 @@ split-pane row pairing is testable without a terminal.
 `edit` / `write` → built-in `execute` (unchanged) → `details.diff` →
 `diff.ts` parse → `store.record()` → subscribers re-render.
 
-Child sessions: `tool_execution_end` with `toolName` of `edit` or `write` →
-same parse → `store.record()` with an origin tag.
+Child sessions: `tool_execution_start` with `toolName` of `edit` or `write` →
+path extracted from args → `store.recordExternal()` with an origin tag and no
+hunks. The viewer fills in hunks on demand from `git show HEAD:<path>` diffed
+against the file on disk.
 
 ## Error handling
 
