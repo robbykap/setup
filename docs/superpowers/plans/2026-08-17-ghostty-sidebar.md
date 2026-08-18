@@ -896,7 +896,7 @@ class TestFit(unittest.TestCase):
         self.assertEqual(len(render.fit("ab", "", 10)), 10)
 
     def test_right_text_is_right_aligned(self):
-        self.assertEqual(render.fit("ab", "2p", 10), "ab     2p")
+        self.assertEqual(render.fit("ab", "2p", 10), "ab      2p")
 
     def test_long_left_text_is_truncated_with_ellipsis(self):
         result = render.fit("averylongfilename.py", "", 10)
