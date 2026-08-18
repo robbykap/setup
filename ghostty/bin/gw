@@ -52,4 +52,9 @@ tmux -L gw -f "$ROOT/tmux/tmux.conf" new-session -d -A -s "$SESSION" -c "$PWD"
 [ -n "${VISUAL:-}" ] && tmux -L gw set-environment -g VISUAL "$VISUAL"
 [ -n "${EDITOR:-}" ] && tmux -L gw set-environment -g EDITOR "$EDITOR"
 
+# Create the sidebar. The hooks only fire on new windows and window switches,
+# so nothing else ever builds it for the session's FIRST window. gw-sidebar is
+# idempotent: it exits 0 when a sidebar already exists in this window.
+tmux -L gw run-shell gw-sidebar
+
 exec tmux -L gw -f "$ROOT/tmux/tmux.conf" new-session -A -s "$SESSION" -c "$PWD"
