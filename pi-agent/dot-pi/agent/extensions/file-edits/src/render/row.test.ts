@@ -6,7 +6,6 @@ import {
   EmptyRow,
   delegationContext,
   renderCollapsedRow,
-  PEEK_LINES,
 } from "./row.ts";
 import { parseUnifiedPatch } from "../diff.ts";
 
@@ -53,8 +52,11 @@ test("the peek is capped", () => {
     `@@ -1,1 +1,6 @@\n+a\n+b\n+c\n+d\n+e\n`,
   )!;
   const [, peek] = renderCollapsedRow({ ...change, hunks: many.hunks }, 80, theme);
-  assert.equal(peek!.split("\n").length, 1);
-  assert.equal(PEEK_LINES, 3);
+  assert.match(peek!, /\ba\b/);
+  assert.match(peek!, /\bb\b/);
+  assert.match(peek!, /\bc\b/);
+  assert.doesNotMatch(peek!, /\bd\b/);
+  assert.doesNotMatch(peek!, /\be\b/);
 });
 
 test("every line fits the width", () => {
