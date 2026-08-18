@@ -1,0 +1,11 @@
+# Ghostty settings for the workspace. Included by ~/.config/ghostty/config,
+# which install.sh generates with the absolute path to bin/gw.
+
+theme = Catppuccin Frappe
+font-size = 13
+window-padding-x = 4
+window-padding-y = 4
+window-save-state = always
+macos-option-as-alt = true
+mouse-hide-while-typing = true
+confirm-close-surface = false
