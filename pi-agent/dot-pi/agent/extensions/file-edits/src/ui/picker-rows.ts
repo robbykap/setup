@@ -29,6 +29,36 @@ export function filterChanges(
   return fuzzyFilter([...changes], query, (change) => change.path);
 }
 
+/** The picker's filter and cursor, threaded through picker → viewer → picker
+ * so reopening the picker does not forget either. Mirrors
+ * background-terminals' DashboardSelection. */
+export interface PickerState {
+  query: string;
+  path?: string;
+  index: number;
+}
+
+export function createPickerState(): PickerState {
+  return { query: "", index: 0 };
+}
+
+/** Re-anchors the cursor to `state.path` when it is still present in `rows`;
+ * otherwise degrades to the nearest row at the previous index. Mutates
+ * `state` in place, same contract as reconcileDashboardSelection. */
+export function reconcilePickerSelection(
+  state: PickerState,
+  rows: ReadonlyArray<Pick<FileChange, "path">>,
+): void {
+  const stableIndex = state.path
+    ? rows.findIndex((row) => row.path === state.path)
+    : -1;
+  state.index =
+    stableIndex >= 0
+      ? stableIndex
+      : Math.min(Math.max(0, state.index), Math.max(0, rows.length - 1));
+  state.path = rows[state.index]?.path;
+}
+
 export function renderPickerRow(
   change: FileChange,
   width: number,

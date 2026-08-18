@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { filterChanges, formatAge, renderPickerRow } from "./picker-rows.ts";
+import {
+  createPickerState,
+  filterChanges,
+  formatAge,
+  reconcilePickerSelection,
+  renderPickerRow,
+} from "./picker-rows.ts";
 
 const theme = {
   fg: (_color: string, text: string) => text,
@@ -57,6 +63,46 @@ test("formatAge counts up in mm:ss then minutes", () => {
   assert.equal(formatAge(0), "0:00 ago");
   assert.equal(formatAge(31_000), "0:31 ago");
   assert.equal(formatAge(3_600_000), "60:00 ago");
+});
+
+test("the cursor re-anchors to the same path when the list order changes", () => {
+  const state = createPickerState();
+  state.path = "b.ts";
+  state.index = 1;
+  reconcilePickerSelection(state, [
+    { path: "b.ts" },
+    { path: "a.ts" },
+    { path: "c.ts" },
+  ]);
+  assert.equal(state.index, 0);
+  assert.equal(state.path, "b.ts");
+});
+
+test("the cursor degrades to the nearest row when the anchored path disappears", () => {
+  const state = createPickerState();
+  state.path = "b.ts";
+  state.index = 1;
+  reconcilePickerSelection(state, [{ path: "a.ts" }, { path: "c.ts" }]);
+  assert.equal(state.index, 1);
+  assert.equal(state.path, "c.ts");
+});
+
+test("the cursor clamps to the last row when the list shrinks below it", () => {
+  const state = createPickerState();
+  state.path = "gone.ts";
+  state.index = 4;
+  reconcilePickerSelection(state, [{ path: "a.ts" }]);
+  assert.equal(state.index, 0);
+  assert.equal(state.path, "a.ts");
+});
+
+test("an empty list leaves no path anchored", () => {
+  const state = createPickerState();
+  state.path = "gone.ts";
+  state.index = 0;
+  reconcilePickerSelection(state, []);
+  assert.equal(state.index, 0);
+  assert.equal(state.path, undefined);
 });
 
 test("filtering is fuzzy and case-insensitive", () => {

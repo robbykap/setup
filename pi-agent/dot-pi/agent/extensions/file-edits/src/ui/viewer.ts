@@ -19,6 +19,7 @@ import { diffAgainstHead } from "../git-diff.ts";
 import { iconFor, paintIcon } from "../icons.ts";
 import { wordSpans } from "../intraline.ts";
 import type { FileEditStore } from "../store.ts";
+import { siblingPath } from "./navigation.ts";
 
 export type ViewMode = "stacked" | "split";
 
@@ -57,6 +58,7 @@ class DiffViewer implements Component {
     private store: FileEditStore,
     private path: string,
     private state: ViewerState,
+    private paths: ReadonlyArray<string>,
     private done: (value: ViewerExit) => void,
   ) {
     this.unsubscribe = store.subscribe(() => this.tui.requestRender());
@@ -84,10 +86,7 @@ class DiffViewer implements Component {
   invalidate(): void {}
 
   private sibling(step: number): string | undefined {
-    const paths = this.store.list().map((change) => change.path);
-    const current = paths.indexOf(this.path);
-    if (current === -1 || paths.length === 0) return undefined;
-    return paths[(current + step + paths.length) % paths.length];
+    return siblingPath(this.paths, this.path, step);
   }
 
   handleInput(data: string): void {
@@ -257,6 +256,7 @@ export async function openDiffViewer(
   path: string,
   state: ViewerState,
   cwd: string,
+  paths: ReadonlyArray<string> = store.list().map((change) => change.path),
 ): Promise<ViewerExit> {
   const change = store.get(path);
   if (change?.hunksPending) {
@@ -271,7 +271,7 @@ export async function openDiffViewer(
   }
   return ctx.ui.custom<ViewerExit>(
     (tui, theme, keybindings, done) =>
-      new DiffViewer(tui, theme, keybindings, store, path, state, done),
+      new DiffViewer(tui, theme, keybindings, store, path, state, paths, done),
     {
       overlay: true,
       overlayOptions: { anchor: "center", width: "100%", maxHeight: "100%" },
