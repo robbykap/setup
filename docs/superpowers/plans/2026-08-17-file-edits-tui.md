@@ -1256,36 +1256,48 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { iconFor, paintIcon } from "./icons.ts";
 
+/** Assert on codepoints, not literal glyphs: a mangled private-use character
+ * would otherwise make an empty-vs-empty comparison pass silently. */
+function codePointOf(path: string) {
+  return iconFor(path).glyph.codePointAt(0);
+}
+
 test("known extensions get their own glyph and color", () => {
-  const ts = iconFor("src/router.ts");
-  assert.equal(ts.glyph, "\uE628");
-  assert.deepEqual(ts.rgb, [137, 180, 250]);
-  assert.equal(iconFor("a/b/main.py").glyph, "\uE73C");
-  assert.equal(iconFor("theme.json").glyph, "\uE60B");
-  assert.equal(iconFor("README.md").glyph, "\uE73E");
+  assert.equal(codePointOf("src/router.ts"), 0xe628);
+  assert.deepEqual(iconFor("src/router.ts").rgb, [137, 180, 250]);
+  assert.equal(codePointOf("a/b/main.py"), 0xe73c);
+  assert.equal(codePointOf("theme.json"), 0xe60b);
+  assert.equal(codePointOf("README.md"), 0xe73e);
+});
+
+test("every glyph is exactly one non-empty character", () => {
+  for (const path of ["a.ts", "a.py", "Dockerfile", "Makefile", ".gitignore", "x.unknown"]) {
+    const { glyph } = iconFor(path);
+    assert.equal([...glyph].length, 1, `bad glyph for ${path}`);
+  }
 });
 
 test("matching is case-insensitive", () => {
-  assert.equal(iconFor("A.TS").glyph, iconFor("a.ts").glyph);
+  assert.equal(codePointOf("A.TS"), codePointOf("a.ts"));
 });
 
 test("exact filenames win over extensions", () => {
-  assert.equal(iconFor("Dockerfile").glyph, "\uE7B0");
-  assert.equal(iconFor("some/dir/Dockerfile").glyph, "\uE7B0");
+  assert.equal(codePointOf("Dockerfile"), 0xe7b0);
+  assert.equal(codePointOf("some/dir/Dockerfile"), 0xe7b0);
 });
 
 test("unknown extensions fall back to a generic document", () => {
-  const unknown = iconFor("data.xyzzy");
-  assert.equal(unknown.glyph, "\uF016");
-  assert.deepEqual(unknown.rgb, [166, 173, 200]);
+  assert.equal(codePointOf("data.xyzzy"), 0xf016);
+  assert.deepEqual(iconFor("data.xyzzy").rgb, [166, 173, 200]);
 });
 
 test("files with no extension fall back too", () => {
-  assert.equal(iconFor("LICENSE").glyph, "\uF016");
+  assert.equal(codePointOf("LICENSE"), 0xf016);
 });
 
 test("paintIcon wraps the glyph in a truecolor escape", () => {
-  assert.equal(paintIcon(iconFor("a.ts")), "\x1b[38;2;137;180;250m\x1b[0m");
+  const icon = iconFor("a.ts");
+  assert.equal(paintIcon(icon), `\x1b[38;2;137;180;250m${icon.glyph}\x1b[0m`);
 });
 ```
 
@@ -1327,38 +1339,44 @@ const RED: Rgb = [243, 139, 168];
 const SKY: Rgb = [137, 220, 235];
 const SUBTEXT: Rgb = [166, 173, 200];
 
-/** Nerd-font codepoints are written as escapes on purpose: literal
- * private-use-area characters do not survive copy/paste through every editor,
- * and a silently-empty glyph is worse than an obviously wrong one. */
-const FALLBACK: FileIcon = { glyph: "\uF016", rgb: SUBTEXT };
+/** Glyphs are declared as numeric codepoints, not literal characters.
+ * Nerd-font glyphs live in the Unicode private use area; pasted literally they
+ * are invisible in most editors and are silently dropped by some tools, which
+ * would leave the UI with blank icons and tests that assert blankness. A number
+ * cannot be corrupted that way. */
+function glyph(codePoint: number, rgb: Rgb): FileIcon {
+  return { glyph: String.fromCodePoint(codePoint), rgb };
+}
+
+const FALLBACK = glyph(0xf016, SUBTEXT);
 
 /** Exact filenames take precedence over extensions. */
 const BY_NAME: Record<string, FileIcon> = {
-  dockerfile: { glyph: "\uE7B0", rgb: BLUE },
-  makefile: { glyph: "\uE673", rgb: PEACH },
-  ".gitignore": { glyph: "\uE702", rgb: PEACH },
+  dockerfile: glyph(0xe7b0, BLUE),
+  makefile: glyph(0xe673, PEACH),
+  ".gitignore": glyph(0xe702, PEACH),
 };
 
 const BY_EXTENSION: Record<string, FileIcon> = {
-  ts: { glyph: "\uE628", rgb: BLUE },
-  tsx: { glyph: "\uE628", rgb: BLUE },
-  js: { glyph: "\uE781", rgb: YELLOW },
-  jsx: { glyph: "\uE781", rgb: YELLOW },
-  json: { glyph: "\uE60B", rgb: YELLOW },
-  py: { glyph: "\uE73C", rgb: YELLOW },
-  rs: { glyph: "\uE7A8", rgb: PEACH },
-  go: { glyph: "\uE627", rgb: SKY },
-  sh: { glyph: "\uE795", rgb: GREEN },
-  bash: { glyph: "\uE795", rgb: GREEN },
-  zsh: { glyph: "\uE795", rgb: GREEN },
-  nu: { glyph: "\uE795", rgb: GREEN },
-  md: { glyph: "\uE73E", rgb: SUBTEXT },
-  toml: { glyph: "\uE615", rgb: PEACH },
-  yaml: { glyph: "\uE615", rgb: PEACH },
-  yml: { glyph: "\uE615", rgb: PEACH },
-  css: { glyph: "\uE749", rgb: MAUVE },
-  html: { glyph: "\uE736", rgb: RED },
-  lock: { glyph: "\uF023", rgb: SUBTEXT },
+  ts: glyph(0xe628, BLUE),
+  tsx: glyph(0xe628, BLUE),
+  js: glyph(0xe781, YELLOW),
+  jsx: glyph(0xe781, YELLOW),
+  json: glyph(0xe60b, YELLOW),
+  py: glyph(0xe73c, YELLOW),
+  rs: glyph(0xe7a8, PEACH),
+  go: glyph(0xe627, SKY),
+  sh: glyph(0xe795, GREEN),
+  bash: glyph(0xe795, GREEN),
+  zsh: glyph(0xe795, GREEN),
+  nu: glyph(0xe795, GREEN),
+  md: glyph(0xe73e, SUBTEXT),
+  toml: glyph(0xe615, PEACH),
+  yaml: glyph(0xe615, PEACH),
+  yml: glyph(0xe615, PEACH),
+  css: glyph(0xe749, MAUVE),
+  html: glyph(0xe736, RED),
+  lock: glyph(0xf023, SUBTEXT),
 };
 
 export function iconFor(path: string): FileIcon {
