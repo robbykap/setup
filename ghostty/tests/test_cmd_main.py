@@ -89,6 +89,11 @@ class TestVerbs(unittest.TestCase):
         self.assertEqual(cmd_main.main(["--session", "s1", "down"]), 0)
         self.assertEqual(cmd_main.main(["--session", "s1", "expand"]), 0)
 
+    def test_poke_mutates_nothing_and_returns_success(self):
+        before = self.load()
+        self.assertEqual(cmd_main.main(["--session", "s1", "poke"]), 0)
+        self.assertEqual(self.load(), before)
+
 
 class FakeTmux:
     """Stands in for tmuxio: canned query answers, recorded commands."""
@@ -135,6 +140,23 @@ class TestActivate(unittest.TestCase):
         command = self.fake.sent[0][3]
         self.assertIn("nvim", command)
         self.assertIn("notes one.md", command)
+
+    def test_visual_takes_priority_over_editor(self):
+        with mock.patch.dict(os.environ, {"VISUAL": "code -w", "EDITOR": "nvim"}):
+            cmd_main.main(["--session", "s1", "down"])
+            cmd_main.main(["--session", "s1", "activate"])
+        command = self.fake.sent[0][3]
+        self.assertIn("code -w", command)
+        self.assertNotIn("nvim", command)
+
+    def test_falls_back_to_vi_when_neither_is_set(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("VISUAL", None)
+            os.environ.pop("EDITOR", None)
+            cmd_main.main(["--session", "s1", "down"])
+            cmd_main.main(["--session", "s1", "activate"])
+        command = self.fake.sent[0][3]
+        self.assertTrue(command.startswith("vi "))
 
     def test_paths_with_spaces_are_quoted(self):
         cmd_main.main(["--session", "s1", "down"])
@@ -238,6 +260,32 @@ class TestClick(unittest.TestCase):
 
     def test_non_numeric_click_is_rejected(self):
         self.assertEqual(cmd_main.main(["--session", "s1", "click", "x"]), 2)
+
+
+class TestCrashHandling(unittest.TestCase):
+    """Through run-shell -b a crash is otherwise silent: no pane output, no
+    tmux message. main() must catch it and surface a display-message."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["XDG_STATE_HOME"] = self.tmp
+        self.root = Path(tempfile.mkdtemp())
+        state.save("s1", state.default_state(str(self.root)))
+        self.fake = FakeTmux()
+        patcher = mock.patch.object(cmd_main, "tmuxio", self.fake)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_unexpected_exception_returns_nonzero_and_messages_the_user(self):
+        with mock.patch.object(cmd_main.state, "save", side_effect=OSError("boom")):
+            code = cmd_main.main(["--session", "s1", "view", "toggle"])
+        self.assertEqual(code, 1)
+        self.assertTrue(self.fake.messages)
+        self.assertIn("crashed", self.fake.messages[0][1])
+
+    def test_normal_return_codes_are_unaffected(self):
+        self.assertEqual(cmd_main.main(["--session", "s1", "banana"]), 2)
+        self.assertEqual(self.fake.messages, [])
 
 
 if __name__ == "__main__":

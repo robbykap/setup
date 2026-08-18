@@ -4,7 +4,15 @@ set -eu
 
 existing=$(tmux show-option -gqv @sidebar_pane)
 if [ -n "$existing" ] && tmux list-panes -a -F '#{pane_id}' | grep -qx "$existing"; then
-  exit 0
+  window=$(tmux display-message -p '#{window_id}')
+  holder=$(tmux list-panes -a -F '#{pane_id} #{window_id}' | awk -v p="$existing" '$1 == p {print $2}')
+  if [ "$holder" = "$window" ]; then
+    exit 0
+  fi
+  # The pane is alive but stranded in another window (e.g. a stale
+  # gw-follow.lock swallowed the migration). prefix+B is the documented
+  # recovery — actually bring it here instead of silently doing nothing.
+  exec gw-follow
 fi
 
 active=$(tmux display-message -p '#{pane_id}')

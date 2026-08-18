@@ -10,7 +10,23 @@ failures=0
 export XDG_STATE_HOME="$STATE"
 export PATH="$ROOT/bin:$PATH"
 export PYTHONPATH="$ROOT/lib"
-export GW_PYTHON="${GW_PYTHON:-/opt/homebrew/bin/python3.13}"
+
+# Same resolution order as bin/gw, so this doesn't hardcode a Homebrew/Apple
+# Silicon path and fail on an Intel Mac or Linux box.
+pick_python() {
+  for candidate in "${GW_PYTHON:-}" /opt/homebrew/bin/python3.13 /usr/local/bin/python3.13 python3; do
+    [ -n "$candidate" ] || continue
+    command -v "$candidate" >/dev/null 2>&1 || continue
+    if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+      command -v "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+GW_PYTHON=$(pick_python) || { echo "Python 3.11 or newer not found."; exit 1; }
+export GW_PYTHON
 
 check() {
   printf '%-52s' "$1"

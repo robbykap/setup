@@ -63,6 +63,12 @@ def selected(data: dict):
 def apply_verb(data: dict, verb: str, argument) -> int:
     settings = data["tree"]
 
+    if verb == "poke":
+        # Mutates nothing; main() pokes the FIFO whenever a verb returns 0,
+        # so this exists purely to wake the renderer out-of-band (e.g. from
+        # a tmux hook on window change) without touching any state.
+        return 0
+
     if verb == "view":
         if argument == "toggle":
             data["view"] = "files" if data["view"] == "tabs" else "tabs"
@@ -113,7 +119,7 @@ def apply_verb(data: dict, verb: str, argument) -> int:
         if node.is_dir:
             settings["expanded"] = sorted(tree.toggle(set(settings["expanded"]), node.path))
             return 0
-        editor = os.environ.get("EDITOR", "vi")
+        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"
         send_to_shell(f"{editor} {shlex.quote(node.path)}")
         return 0
 
@@ -150,7 +156,7 @@ def apply_verb(data: dict, verb: str, argument) -> int:
     return 2
 
 
-def main(argv=None) -> int:
+def _run(argv) -> int:
     parser = argparse.ArgumentParser(description="Mutate sidebar state.")
     parser.add_argument("--session", default=None)
     parser.add_argument("verb")
@@ -164,6 +170,18 @@ def main(argv=None) -> int:
         state.save(session, data)
         poke(session)
     return code
+
+
+def main(argv=None) -> int:
+    """Through run-shell -b a crash is otherwise invisible: no pane output,
+    no tmux message, the sidebar just stops responding to keys. Surface it."""
+    try:
+        return _run(argv)
+    except SystemExit:
+        raise  # argparse usage errors (e.g. missing verb); leave as-is
+    except Exception as error:  # noqa: BLE001 - last-resort diagnostic path
+        tmuxio.run("display-message", f"sidebar: sb-cmd crashed — {type(error).__name__}: {error}")
+        return 1
 
 
 if __name__ == "__main__":

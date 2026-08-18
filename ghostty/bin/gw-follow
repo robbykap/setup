@@ -3,8 +3,21 @@
 set -eu
 
 lock="${TMPDIR:-/tmp}/gw-follow.lock"
-mkdir "$lock" 2>/dev/null || exit 0
-trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+
+# Self-healing: if a previous gw-follow was SIGKILLed (or died between mkdir
+# and the trap), the lock dir survives forever and every future migration
+# would silently no-op. Reclaim it once we've confirmed the pid inside it
+# is not (or no longer) a live process.
+if ! mkdir "$lock" 2>/dev/null; then
+  holder_pid=$(cat "$lock/pid" 2>/dev/null || true)
+  if [ -n "$holder_pid" ] && kill -0 "$holder_pid" 2>/dev/null; then
+    exit 0  # a live gw-follow is already migrating the pane
+  fi
+  rm -rf "$lock" 2>/dev/null
+  mkdir "$lock" 2>/dev/null || exit 0
+fi
+echo "$$" > "$lock/pid" 2>/dev/null || true
+trap 'rm -rf "$lock" 2>/dev/null || true' EXIT
 
 pane=$(tmux show-option -gqv @sidebar_pane)
 if [ -z "$pane" ] || ! tmux list-panes -a -F '#{pane_id}' | grep -qx "$pane"; then
@@ -17,6 +30,18 @@ holder=$(tmux list-panes -a -F '#{pane_id} #{window_id}' | awk -v p="$pane" '$1 
 [ "$holder" = "$window" ] && exit 0
 
 active=$(tmux display-message -p '#{pane_id}')
+zoomed=$(tmux display-message -p -t "$window" '#{window_zoomed_flag}')
+# A window whose sidebar just left (see below) may have been unable to
+# restore its zoom on the spot, because a lone remaining pane can't be
+# "zoomed" relative to anything. That intent was parked here; honor it now
+# that the sidebar (and a second pane) is coming back.
+pending=$(tmux show-options -wqv -t "$window" @gw_rezoom 2>/dev/null || true)
+tmux set-option -wu -t "$window" @gw_rezoom 2>/dev/null || true
+
+# join-pane also reshapes $holder (it loses the sidebar pane), which can
+# unzoom IT too — not just the destination window.
+holder_active=$(tmux display-message -p -t "$holder" '#{pane_id}')
+holder_zoomed=$(tmux display-message -p -t "$holder" '#{window_zoomed_flag}')
 tmux join-pane -bhd -l 24 -s "$pane" -t "$window"
 
 # join-pane's -b only controls visual side placement; the joined pane always
@@ -31,3 +56,19 @@ other=$(tmux list-panes -t "$window" -F '#{pane_id} #{pane_index}' |
 
 tmux select-layout -t "$window" main-vertical
 tmux select-pane -t "$active"
+
+# join-pane/select-layout unzoom the window as a side effect of reshaping it.
+# Restore zoom on both sides so switching tabs doesn't silently collapse
+# whatever the user had zoomed in on.
+if [ "$zoomed" = "1" ] || [ "$pending" = "1" ]; then
+  tmux resize-pane -Z -t "$active"
+fi
+if [ "$holder_zoomed" = "1" ] && [ "$holder_active" != "$pane" ]; then
+  tmux resize-pane -Z -t "$holder_active" 2>/dev/null || true
+  if [ "$(tmux display-message -p -t "$holder" '#{window_zoomed_flag}')" != "1" ]; then
+    # $holder dropped to its one remaining pane, which can't be "zoomed" —
+    # remember the intent and reapply it the next time the sidebar (and a
+    # second pane) returns to this window.
+    tmux set-option -w -t "$holder" @gw_rezoom 1
+  fi
+fi

@@ -36,4 +36,20 @@ export GW_PYTHON
 export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
 export PATH="$SELF:$PATH"
 
+# run-shell's spawned processes see tmux's own global environment table, not
+# this script's process environment — and that table is only ever seeded
+# from the process that started the server. Ghostty launches `gw` without a
+# login shell, so EDITOR/VISUAL from the user's rc files may never make it
+# into this process at all; and on every later `gw` invocation that just
+# attaches to an already-running server, values set here wouldn't reach the
+# table without doing it explicitly. Push them in ourselves, every run.
+#
+# `start-server` alone won't do — tmux's exit-empty defaults on, so a
+# server with no session exits again before the set-environment below ever
+# reaches it. Create-or-no-op a detached session first (keeps the server
+# alive either way), THEN set the environment, THEN attach for real.
+tmux -L gw -f "$ROOT/tmux/tmux.conf" new-session -d -A -s "$SESSION" -c "$PWD"
+[ -n "${VISUAL:-}" ] && tmux -L gw set-environment -g VISUAL "$VISUAL"
+[ -n "${EDITOR:-}" ] && tmux -L gw set-environment -g EDITOR "$EDITOR"
+
 exec tmux -L gw -f "$ROOT/tmux/tmux.conf" new-session -A -s "$SESSION" -c "$PWD"
