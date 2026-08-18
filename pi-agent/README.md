@@ -38,6 +38,7 @@ tool names — pi refuses to load both.
 | `file-search`          | `fd` and `rg` as first-class model tools                    |
 | `background-terminals` | Long-lived shell commands with a `/ps` view                 |
 | `subagents`            | Background subagents with intent-based model routing        |
+| `file-edits`           | Collapsed edit rows, a file picker, and a diff viewer       |
 | `ask-user`             | Lets the model ask multiple-choice questions                |
 | `git-info`             | Branch and changed-file status in the bottom bar            |
 | `model-info`           | Model, context use, and cost in the bottom bar              |
@@ -66,6 +67,22 @@ tag reuses pi's `thinking*` tokens so a level looks the same there as on the
 editor border, and the gauge drains as context fills (green → yellow at 25% →
 red at 10%). Ghostty is on Catppuccin Mocha too
 (`ghostty/dot-config/ghostty/config`).
+
+## Status bar
+
+Extension statuses (`file-edits`, `subagents`, `background-terminals`,
+`workflows`, `summaries`) share one line directly above the prompt, joined
+with the same `◆` separator the footer uses. Segments have a fixed order and
+drop from the right when the line will not fit. Extensions publish through
+`ctx.ui.setStatus`; `ui-customization` renders the line.
+
+`file-edits` collapses every `edit` and `write` to two lines in the
+transcript. `ctrl+f` (or `/files`) opens the picker; Enter opens the diff
+viewer, `s` toggles stacked and split, `n`/`p` move between files. `ctrl+o`
+still expands a row inline. If pi reports a keybinding conflict for `ctrl+f`
+at startup, the fallback is `ctrl+shift+f` — this has not been verified
+interactively yet. `file-edits` has no `effect` dependency; install it the
+same way as the other extensions, per [Install](#install) above.
 
 ## Model configuration
 
