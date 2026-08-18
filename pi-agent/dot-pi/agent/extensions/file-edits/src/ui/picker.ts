@@ -16,6 +16,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { FileChange } from "../domain.ts";
 import type { FileEditStore } from "../store.ts";
 import { filterChanges, renderPickerRow } from "./picker-rows.ts";
+import { createViewerState, openDiffViewer, type ViewerState } from "./viewer.ts";
 
 class FilePicker implements Component {
   private query = "";
@@ -184,4 +185,25 @@ export async function openFilePicker(
       overlayOptions: { anchor: "center", width: "100%", maxHeight: "100%" },
     },
   );
+}
+
+/**
+ * Picker → viewer → picker, the same two-stage loop /ps uses. `n`/`p` inside
+ * the viewer move between files without returning to the list.
+ */
+export async function browseChangedFiles(
+  ctx: ExtensionContext,
+  store: FileEditStore,
+  state: ViewerState = createViewerState(),
+) {
+  while (true) {
+    const picked = await openFilePicker(ctx, store);
+    if (!picked) return;
+
+    let current: string | null = picked;
+    while (current) {
+      const exit = await openDiffViewer(ctx, store, current, state);
+      current = exit ? exit.next : null;
+    }
+  }
 }

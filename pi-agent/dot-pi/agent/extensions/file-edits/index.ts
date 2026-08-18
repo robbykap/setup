@@ -25,13 +25,15 @@ import {
 import { parseUnifiedPatch } from "./src/diff.ts";
 import { createFileEditStore } from "./src/store.ts";
 import { renderCollapsedRow } from "./src/render/row.ts";
-import { openFilePicker } from "./src/ui/picker.ts";
+import { browseChangedFiles } from "./src/ui/picker.ts";
+import { createViewerState } from "./src/ui/viewer.ts";
 
 const STATUS_KEY = "file-edits";
 const SELF = { kind: "self" } as const;
 
 export default function (pi: ExtensionAPI) {
   const store = createFileEditStore();
+  const viewerState = createViewerState();
   let ui: ExtensionUIContext | undefined;
 
   /** Store keys are cwd-relative: that is what the user reads and types. */
@@ -165,7 +167,7 @@ export default function (pi: ExtensionAPI) {
     description: "Browse files changed in this session",
     handler: async (_args, ctx) => {
       if (ctx.mode !== "tui") return;
-      await openFilePicker(ctx, store);
+      await browseChangedFiles(ctx, store, viewerState);
     },
   });
 
@@ -173,7 +175,7 @@ export default function (pi: ExtensionAPI) {
     description: "Browse changed files",
     handler: async (ctx) => {
       if (ctx.mode !== "tui") return;
-      await openFilePicker(ctx, store);
+      await browseChangedFiles(ctx, store, viewerState);
     },
   });
 }
