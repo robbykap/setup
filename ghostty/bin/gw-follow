@@ -1,0 +1,33 @@
+#!/bin/sh
+# Move the one sidebar pane into the active window and re-apply the layout.
+set -eu
+
+lock="${TMPDIR:-/tmp}/gw-follow.lock"
+mkdir "$lock" 2>/dev/null || exit 0
+trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+
+pane=$(tmux show-option -gqv @sidebar_pane)
+if [ -z "$pane" ] || ! tmux list-panes -a -F '#{pane_id}' | grep -qx "$pane"; then
+  gw-sidebar
+  exit 0
+fi
+
+window=$(tmux display-message -p '#{window_id}')
+holder=$(tmux list-panes -a -F '#{pane_id} #{window_id}' | awk -v p="$pane" '$1 == p {print $2}')
+[ "$holder" = "$window" ] && exit 0
+
+active=$(tmux display-message -p '#{pane_id}')
+tmux join-pane -bhd -l 24 -s "$pane" -t "$window"
+
+# join-pane's -b only controls visual side placement; the joined pane always
+# receives a higher #{pane_index} than panes already in the target window
+# (verified on tmux 3.7b, both with and without -b). select-layout picks the
+# LOWEST-index pane as the "main" (left) pane, so without this swap the
+# freshly-joined sidebar would lose main-pane-width to the pre-existing pane
+# and get shoved into the wide secondary slot instead.
+other=$(tmux list-panes -t "$window" -F '#{pane_id} #{pane_index}' |
+  awk -v p="$pane" '$1 != p' | sort -k2 -n | head -1 | cut -d' ' -f1)
+[ -n "$other" ] && tmux swap-pane -s "$pane" -t "$other"
+
+tmux select-layout -t "$window" main-vertical
+tmux select-pane -t "$active"

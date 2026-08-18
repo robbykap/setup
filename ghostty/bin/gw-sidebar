@@ -1,0 +1,15 @@
+#!/bin/sh
+# Create the single sidebar pane in the active window, unless it already exists somewhere.
+set -eu
+
+existing=$(tmux show-option -gqv @sidebar_pane)
+if [ -n "$existing" ] && tmux list-panes -a -F '#{pane_id}' | grep -qx "$existing"; then
+  exit 0
+fi
+
+active=$(tmux display-message -p '#{pane_id}')
+pane=$(tmux split-window -bhd -l 24 -P -F '#{pane_id}' 'sidebar')
+tmux set-option -p -t "$pane" @sidebar 1
+tmux set-option -g @sidebar_pane "$pane"
+tmux select-layout main-vertical
+tmux select-pane -t "$active"
