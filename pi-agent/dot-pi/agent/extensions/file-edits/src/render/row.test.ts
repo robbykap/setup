@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { visibleWidth } from "@earendil-works/pi-tui";
-import { renderCollapsedRow, PEEK_LINES } from "./row.ts";
+import { Container, visibleWidth } from "@earendil-works/pi-tui";
+import {
+  CollapsedRow,
+  EmptyRow,
+  delegationContext,
+  renderCollapsedRow,
+  PEEK_LINES,
+} from "./row.ts";
 import { parseUnifiedPatch } from "../diff.ts";
 
 const theme = {
@@ -67,4 +73,48 @@ test("a file with no hunks renders a single header line", () => {
 test("new files are labelled", () => {
   const [header] = renderCollapsedRow({ ...change, isNew: true, removed: 0 }, 80, theme);
   assert.match(header!, /new/);
+});
+
+test("the row component renders the row at the width it is given", () => {
+  const row = new CollapsedRow();
+  row.update(change, theme);
+  assert.deepEqual(row.render(80), renderCollapsedRow(change, 80, theme));
+  assert.deepEqual(row.render(40), renderCollapsedRow(change, 40, theme));
+});
+
+test("delegation hides our components from a built-in renderer", () => {
+  // edit.js:276-277 calls clear() on whatever the slot returned last time.
+  assert.equal(
+    delegationContext({ lastComponent: new CollapsedRow() }).lastComponent,
+    undefined,
+  );
+  assert.equal(
+    delegationContext({ lastComponent: new EmptyRow() }).lastComponent,
+    undefined,
+  );
+});
+
+test("delegation hands a built-in its own component back", () => {
+  // write.js:175-179 keeps its incremental highlight cache on that component:
+  // blanking it unconditionally would re-highlight the whole file per chunk.
+  const builtIn = new Container();
+  const state = {};
+  const context = { lastComponent: builtIn, state, expanded: false };
+  assert.equal(delegationContext(context).lastComponent, builtIn);
+  assert.equal(delegationContext(context).state, state);
+  assert.equal(
+    delegationContext({ lastComponent: undefined }).lastComponent,
+    undefined,
+  );
+});
+
+test("the row component is a real pi-tui component", () => {
+  // A built-in renderer that receives this as lastComponent does
+  // `component.clear()` (edit.js:276-277) before using it: a bare object
+  // literal would throw there and fall back to raw text.
+  const row = new CollapsedRow();
+  assert.ok(row instanceof Container);
+  row.clear();
+  row.invalidate();
+  assert.deepEqual(row.render(80), []);
 });

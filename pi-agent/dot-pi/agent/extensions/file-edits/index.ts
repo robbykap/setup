@@ -7,12 +7,16 @@
  * own implementation, so edit semantics are untouched; only the renderers and
  * a store subscription are ours.
  *
+ * Both render slots are ours, because the built-ins put all the visual weight
+ * in renderCall — edit.js:229 renders the FULL diff there and only appends a
+ * summary line in renderResult. Overriding renderResult alone would make the
+ * row longer, not shorter.
+ *
  * ctrl+f (or /files) opens the picker; Enter there opens the diff viewer,
  * which toggles between a unified and a side-by-side layout.
  */
 
 import * as fs from "node:fs";
-import * as path from "node:path";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -22,28 +26,35 @@ import {
   createEditToolDefinition,
   createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { parseUnifiedPatch } from "./src/diff.ts";
+import type { FileChange } from "./src/domain.ts";
 import { observeChildFiles } from "./src/observe.ts";
+import {
+  createCallRecords,
+  executeAndRecord,
+  measureEdit,
+  measureWrite,
+} from "./src/record.ts";
 import { createFileEditStore } from "./src/store.ts";
-import { renderCollapsedRow } from "./src/render/row.ts";
+import {
+  CollapsedRow,
+  EmptyRow,
+  delegationContext,
+} from "./src/render/row.ts";
 import { browseChangedFiles } from "./src/ui/picker.ts";
 import { createViewerState } from "./src/ui/viewer.ts";
 
 const STATUS_KEY = "file-edits";
-const SELF = { kind: "self" } as const;
+
+type Theme = ExtensionContext["ui"]["theme"];
 
 export default function (pi: ExtensionAPI) {
   const store = createFileEditStore();
+  /** Per tool call, so a row can describe its own call: the store is
+   * cumulative per file, which is what the picker and the status want. */
+  const calls = createCallRecords();
   const viewerState = createViewerState();
   let ui: ExtensionUIContext | undefined;
   let stopChildFiles: (() => void) | undefined;
-
-  /** Store keys are cwd-relative: that is what the user reads and types. */
-  const relative = (cwd: string, target: string) => {
-    const absolute = path.isAbsolute(target) ? target : path.join(cwd, target);
-    const rel = path.relative(cwd, absolute);
-    return rel.startsWith("..") ? absolute : rel;
-  };
 
   const updateStatus = () => {
     if (!ui) return;
@@ -64,6 +75,23 @@ export default function (pi: ExtensionAPI) {
 
   store.subscribe(updateStatus);
 
+  const collapsedRow = (
+    lastComponent: unknown,
+    change: FileChange,
+    theme: Theme,
+  ) => {
+    const row =
+      lastComponent instanceof CollapsedRow
+        ? lastComponent
+        : new CollapsedRow();
+    row.update(change, theme);
+    return row;
+  };
+
+  /** renderCall draws the whole row when collapsed, so the result slot has
+   * nothing left to add. An empty container renders no lines. */
+  const noResult = () => new EmptyRow();
+
   pi.on("session_start", (_event, ctx: ExtensionContext) => {
     ui = ctx.mode === "tui" ? ctx.ui : undefined;
     stopChildFiles = observeChildFiles(pi.events, store, ctx.cwd);
@@ -74,40 +102,52 @@ export default function (pi: ExtensionAPI) {
     const editTool: typeof baseEdit = {
       ...baseEdit,
       async execute(toolCallId, params, signal, onUpdate, executeCtx) {
-        const result = await baseEdit.execute(
+        return executeAndRecord({
           toolCallId,
           params,
-          signal,
-          onUpdate,
-          executeCtx,
-        );
-        const patch = result.details?.patch;
-        const parsed = patch ? parseUnifiedPatch(patch) : null;
-        store.record({
-          path: relative(ctx.cwd, params.path),
-          hunks: parsed?.hunks ?? [],
-          added: parsed?.added ?? 0,
-          removed: parsed?.removed ?? 0,
-          isNew: false,
-          origin: SELF,
+          run: () =>
+            baseEdit.execute(toolCallId, params, signal, onUpdate, executeCtx),
+          measure: measureEdit(ctx.cwd),
+          store,
+          calls,
           at: Date.now(),
         });
-        return result;
+      },
+      renderCall(args, theme, context) {
+        // The built-in renders the full diff here (edit.js:229), so this is
+        // the slot that has to collapse. Until the call has been recorded
+        // there is nothing to collapse to: argument streaming stays built-in.
+        const change = calls.get(context.toolCallId);
+        if (!change || context.expanded) {
+          return baseEdit.renderCall!(args, theme, delegationContext(context));
+        }
+        return collapsedRow(context.lastComponent, change, theme);
       },
       renderResult(result, options, theme, context) {
         // A failure must never be collapsed: that is exactly the output the
         // user needs. Same for the expanded view — ctrl+o still works.
-        if (context.isError || options.expanded) {
-          return baseEdit.renderResult!(result, options, theme, context);
+        const change = calls.get(context.toolCallId);
+        const expanded = options.expanded || context.expanded;
+        if (context.isError || expanded || !change) {
+          return baseEdit.renderResult!(
+            result,
+            options,
+            theme,
+            delegationContext(context),
+          );
         }
-        const change = store.get(relative(context.cwd, context.args.path));
-        if (!change) {
-          return baseEdit.renderResult!(result, options, theme, context);
-        }
-        return {
-          render: (width: number) => renderCollapsedRow(change, width, theme),
-          invalidate: () => {},
-        };
+        // Not a rendering call: edit.js:253-275 is where the APPLIED diff is
+        // written back into the call component, and the diff speculated from
+        // the arguments can differ from it (CRLF normalization, BOM
+        // stripping — edit.js:206-215). Run it for that write-back, then
+        // throw the component it returns away.
+        baseEdit.renderResult!(
+          result,
+          options,
+          theme,
+          delegationContext(context),
+        );
+        return noResult();
       },
     };
     pi.registerTool(editTool);
@@ -115,41 +155,45 @@ export default function (pi: ExtensionAPI) {
     const writeTool: typeof baseWrite = {
       ...baseWrite,
       async execute(toolCallId, params, signal, onUpdate, executeCtx) {
-        const target = path.isAbsolute(params.path)
-          ? params.path
-          : path.join(ctx.cwd, params.path);
-        const isNew = !fs.existsSync(target);
-        const result = await baseWrite.execute(
+        return executeAndRecord({
           toolCallId,
           params,
-          signal,
-          onUpdate,
-          executeCtx,
-        );
-        // write has no details, so the counts come from the content itself.
-        store.record({
-          path: relative(ctx.cwd, params.path),
-          hunks: [],
-          added: params.content.split("\n").length,
-          removed: 0,
-          isNew,
-          origin: SELF,
+          run: () =>
+            baseWrite.execute(toolCallId, params, signal, onUpdate, executeCtx),
+          measure: measureWrite(ctx.cwd, fs.existsSync),
+          store,
+          calls,
           at: Date.now(),
         });
-        return result;
+      },
+      renderCall(args, theme, context) {
+        const change = calls.get(context.toolCallId);
+        if (!change || context.expanded) {
+          return baseWrite.renderCall!(args, theme, delegationContext(context));
+        }
+        return collapsedRow(context.lastComponent, change, theme);
       },
       renderResult(result, options, theme, context) {
-        if (context.isError || options.expanded) {
-          return baseWrite.renderResult!(result, options, theme, context);
+        const change = calls.get(context.toolCallId);
+        const expanded = options.expanded || context.expanded;
+        if (context.isError || expanded || !change) {
+          return baseWrite.renderResult!(
+            result,
+            options,
+            theme,
+            delegationContext(context),
+          );
         }
-        const change = store.get(relative(context.cwd, context.args.path));
-        if (!change) {
-          return baseWrite.renderResult!(result, options, theme, context);
-        }
-        return {
-          render: (width: number) => renderCollapsedRow(change, width, theme),
-          invalidate: () => {},
-        };
+        // write's renderResult has no write-back to perform (it only formats
+        // errors — write.js:123-135), but running it costs nothing and keeps
+        // both tools on the same path.
+        baseWrite.renderResult!(
+          result,
+          options,
+          theme,
+          delegationContext(context),
+        );
+        return noResult();
       },
     };
     pi.registerTool(writeTool);
@@ -160,6 +204,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", () => {
     stopChildFiles?.();
     stopChildFiles = undefined;
+    calls.clear();
     try {
       ui?.setStatus(STATUS_KEY, undefined);
     } catch {
