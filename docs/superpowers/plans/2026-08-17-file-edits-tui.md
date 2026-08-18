@@ -1422,6 +1422,7 @@ git commit -m "feat: map file types to mocha nerd-font icons"
 ```ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { renderCollapsedRow, PEEK_LINES } from "./row.ts";
 import { parseUnifiedPatch } from "../diff.ts";
 
@@ -1473,8 +1474,10 @@ test("the peek is capped", () => {
 });
 
 test("every line fits the width", () => {
+  // visibleWidth, not .length: paintIcon always emits truecolor escapes, so a
+  // raw character count would measure the escape bytes too.
   for (const line of renderCollapsedRow(change, 30, theme)) {
-    assert.ok(line.length <= 30, `too wide: ${line}`);
+    assert.ok(visibleWidth(line) <= 30, `too wide: ${JSON.stringify(line)}`);
   }
 });
 
