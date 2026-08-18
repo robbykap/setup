@@ -34,6 +34,7 @@ import {
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 import { formatActivityStatus } from "../shared/activity-status.ts";
+import { CHILD_FILE_CHANNEL } from "../shared/dashboard-state.ts";
 import { createWorkflowPersistence, persistWorkflowJson } from "./artifacts.ts";
 import { RunController } from "./controller.ts";
 import { sessionWorkflowRunIds, showWorkflowDashboard } from "./dashboard.ts";
@@ -564,6 +565,11 @@ export default function workflows(pi: ExtensionAPI) {
                 record.transcript = progress.transcript;
                 emit();
               },
+              onFileTouched: (path: string) =>
+                pi.events.emit(CHILD_FILE_CHANNEL, {
+                  path,
+                  origin: { kind: "workflow", label },
+                }),
             });
 
             record.usage = outcome.usage;

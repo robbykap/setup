@@ -450,6 +450,10 @@ const makePiSession = (
           break;
         }
         case "tool_execution_start":
+          if (event.toolName === "edit" || event.toolName === "write") {
+            const target = (event.args as { path?: unknown } | undefined)?.path;
+            if (typeof target === "string") task.parent.onFileTouched?.(target);
+          }
           emit({
             _tag: "ToolStart",
             toolId: event.toolCallId,

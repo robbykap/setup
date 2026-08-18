@@ -23,6 +23,7 @@ import {
   createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { parseUnifiedPatch } from "./src/diff.ts";
+import { observeChildFiles } from "./src/observe.ts";
 import { createFileEditStore } from "./src/store.ts";
 import { renderCollapsedRow } from "./src/render/row.ts";
 import { browseChangedFiles } from "./src/ui/picker.ts";
@@ -35,6 +36,7 @@ export default function (pi: ExtensionAPI) {
   const store = createFileEditStore();
   const viewerState = createViewerState();
   let ui: ExtensionUIContext | undefined;
+  let stopChildFiles: (() => void) | undefined;
 
   /** Store keys are cwd-relative: that is what the user reads and types. */
   const relative = (cwd: string, target: string) => {
@@ -64,6 +66,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", (_event, ctx: ExtensionContext) => {
     ui = ctx.mode === "tui" ? ctx.ui : undefined;
+    stopChildFiles = observeChildFiles(pi.events, store, ctx.cwd);
 
     const baseEdit = createEditToolDefinition(ctx.cwd);
     const baseWrite = createWriteToolDefinition(ctx.cwd);
@@ -155,6 +158,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", () => {
+    stopChildFiles?.();
+    stopChildFiles = undefined;
     try {
       ui?.setStatus(STATUS_KEY, undefined);
     } catch {

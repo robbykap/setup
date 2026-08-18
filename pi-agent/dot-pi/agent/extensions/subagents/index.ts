@@ -74,6 +74,7 @@ import {
   registrySnapshot,
   validateExplicitModel,
 } from "./src/registry-snapshot.ts";
+import { CHILD_FILE_CHANNEL } from "../shared/dashboard-state.ts";
 import { buildModelChoices } from "../shared/model-choices.ts";
 import { formatContextUtilization } from "./src/format.ts";
 import { formatActivityStatus } from "../shared/activity-status.ts";
@@ -483,6 +484,11 @@ export default function (pi: ExtensionAPI) {
               : undefined,
             inheritedThinkingLevel: pi.getThinkingLevel(),
             modelRegistry: ctx.modelRegistry,
+            onFileTouched: (path: string) =>
+              pi.events.emit(CHILD_FILE_CHANNEL, {
+                path,
+                origin: { kind: "subagent", id: title, name: title },
+              }),
           },
         }),
         { signal, interruptMessage: "Subagent spawn aborted." },
@@ -840,6 +846,7 @@ export default function (pi: ExtensionAPI) {
       if (!prompt) return;
     }
 
+    const btwTitle = deriveBtwTitle(prompt);
     const manager = await getManager();
     let snap: SubagentSnapshot;
     try {
@@ -848,7 +855,7 @@ export default function (pi: ExtensionAPI) {
         manager.spawn("pi", {
           origin: "btw",
           prompt,
-          title: deriveBtwTitle(prompt),
+          title: btwTitle,
           cwd: ctx.cwd,
           parent: {
             parentCwd: ctx.cwd,
@@ -858,6 +865,11 @@ export default function (pi: ExtensionAPI) {
               : undefined,
             inheritedThinkingLevel: pi.getThinkingLevel(),
             modelRegistry: ctx.modelRegistry,
+            onFileTouched: (path: string) =>
+              pi.events.emit(CHILD_FILE_CHANNEL, {
+                path,
+                origin: { kind: "subagent", id: btwTitle, name: btwTitle },
+              }),
           },
         }),
       );

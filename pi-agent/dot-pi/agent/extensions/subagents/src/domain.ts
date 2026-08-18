@@ -46,6 +46,9 @@ export interface ParentContext {
   readonly inheritedThinkingLevel?: string;
   /** Parent model registry; required by the pi backend to resolve models. */
   readonly modelRegistry?: ModelRegistry;
+  /** Report a file the child touched, so the parent can list it. Optional:
+   * the backend must work without a parent that cares. */
+  readonly onFileTouched?: (path: string) => void;
 }
 
 export interface SpawnTask {

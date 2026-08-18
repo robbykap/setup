@@ -94,6 +94,8 @@ export interface RunAgentOptions {
   modelRegistry: ExtensionContext["modelRegistry"];
   signal?: AbortSignal;
   onProgress?: (progress: AgentProgress) => void;
+  /** Report a file the child touched, so the parent can list it. */
+  onFileTouched?: (path: string) => void;
   /** Test-only override for the per-tool execution timeout. */
   toolCallTimeoutMs?: number;
   /** Test-only override for the first assistant response-event timeout. */
@@ -239,6 +241,19 @@ export function recordToolExecutionTiming(
     finishedAt: observedAt,
     ...(durationMs === undefined ? {} : { durationMs }),
   });
+}
+
+/** Announce a file this child touched. Only the path is available: the end
+ * event carries no details, so the parent computes the diff itself. */
+function reportTouchedFile(
+  event: ToolTimingEvent,
+  onFileTouched: ((path: string) => void) | undefined,
+) {
+  if (!onFileTouched) return;
+  if (event.type !== "tool_execution_start") return;
+  if (event.toolName !== "edit" && event.toolName !== "write") return;
+  const target = (event.args as { path?: unknown } | undefined)?.path;
+  if (typeof target === "string") onFileTouched(target);
 }
 
 function toolMetadata(
@@ -548,6 +563,7 @@ export async function runAgent(
       event.type === "tool_execution_end"
     ) {
       recordToolExecutionTiming(toolTimings, event);
+      reportTouchedFile(event, options.onFileTouched);
     } else if (
       event.type !== "message_end" &&
       event.type !== "compaction_end"

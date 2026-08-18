@@ -97,3 +97,25 @@ export function isGitInfoState(value: unknown): value is GitInfoState {
     (value.pullRequest === null || isPullRequestInfo(value.pullRequest))
   );
 }
+
+/** A file changed by a child session (subagent or workflow), announced to the
+ * parent so its picker can list it. The diff is not carried: tool_execution_end
+ * has no details, so the viewer computes it against git HEAD on demand. */
+export const CHILD_FILE_CHANNEL = "dashboard:child-file";
+
+export interface ChildFileEvent {
+  readonly path: string;
+  readonly origin:
+    | { readonly kind: "subagent"; readonly id: string; readonly name: string }
+    | { readonly kind: "workflow"; readonly label: string };
+}
+
+export function isChildFileEvent(value: unknown): value is ChildFileEvent {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<ChildFileEvent>;
+  return (
+    typeof candidate.path === "string" &&
+    typeof candidate.origin === "object" &&
+    candidate.origin !== null
+  );
+}
