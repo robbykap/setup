@@ -89,7 +89,9 @@ class FilePicker implements Component {
       this.tui.requestRender();
       return;
     }
-    if (data.length === 1 && data >= " " && data !== "\x1b") {
+    // Any printable input extends the filter. Length is not a useful test:
+    // a non-ASCII character arrives as several bytes.
+    if (!data.startsWith("\x1b") && ![...data].some((ch) => ch < " ")) {
       this.query += data;
       this.index = 0;
       this.tui.requestRender();
