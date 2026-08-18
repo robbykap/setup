@@ -24,7 +24,7 @@ import {
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { copyRegisteredProviders } from "../child-providers.ts";
+import { copyRegisteredProviders } from "../../../shared/child-providers.ts";
 import type { Cause, Scope } from "effect";
 import { Effect, Queue, Stream } from "effect";
 import type { SubagentBackend, SubagentSession } from "../backend.ts";

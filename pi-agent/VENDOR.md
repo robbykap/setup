@@ -44,9 +44,30 @@ Added: `src/router.ts` and `routing.local.json` — intent-based,
 provider-agnostic model routing. Design:
 `docs/superpowers/specs/2026-08-17-subagent-router-design.md`.
 
-Added: `src/child-providers.ts` — copies the parent session's
-extension-registered providers into each subagent's registry. Without it every
-subagent failed with "No API key found"; see commit 4294685 for the root cause.
+Added: `extensions/shared/child-providers.ts` — copies the parent session's
+extension-registered providers into each child session's registry. Without it
+every subagent and every workflow agent failed with "No API key found"; see
+commit 4294685 for the root cause. Both `subagents` and `workflows` use it.
+
+`workflows` model resolution moved to `resolve-model.ts` and now refuses an
+unusable model before the agent starts, rather than failing on its first
+request. It also rejects an ambiguous bare model id instead of silently taking
+whichever provider came first.
+
+`summaries` now completes through `ModelRegistry.complete()` instead of
+pi-ai's `completeSimple()`. The latter dispatches on the model's `api` field
+and only knows built-in APIs, so any extension-registered provider failed with
+"No API provider registered for api: ...".
+
+### Known limitation: summaries cannot use claude-bridge
+
+claude-bridge proxies to Claude Code and serves only the main agent's captured
+system prompt. A recap is a synthetic side-completion with its own prompt, so
+claude-bridge rejects it ("prompt-capture: no capture for this system
+prompt"). This is inherent to the bridge, not a bug in `summaries`. Recaps
+degrade to a local fallback with a warning rather than failing the turn. On a
+machine with a directly authenticated provider, pick that one via
+`/summary-model`.
 
 Model configuration is machine-local and gitignored (`routing.local.json`,
 `config.private.json`). No tracked file names a model, so a fresh clone starts

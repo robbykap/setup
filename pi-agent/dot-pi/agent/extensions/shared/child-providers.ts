@@ -15,6 +15,10 @@
  * Copying the parent's registrations across closes that gap using only public
  * `ModelRegistry` API, and it is provider-agnostic: whatever the parent has
  * registered (claude-bridge, Copilot, anything future) comes along.
+ *
+ * Every extension that creates a child `AgentSession` needs this. Both
+ * subagents and workflow agents were affected; a child that skips it can only
+ * use providers with credentials in `auth.json`.
  */
 
 /** The parent-side reads. Structurally satisfied by `ModelRegistry`. */

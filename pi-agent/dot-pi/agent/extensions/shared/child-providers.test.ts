@@ -4,7 +4,7 @@ import {
   copyRegisteredProviders,
   type ProviderSink,
   type ProviderSource,
-} from "./src/child-providers.ts";
+} from "./child-providers.ts";
 
 function makeSource(
   entries: Record<string, { native?: unknown; config?: unknown }>,

@@ -9,6 +9,11 @@
  * bug in child-providers.ts already demonstrated.
  */
 
+import {
+  checkModelCredentials,
+  unknownModelMessage,
+  type ModelIdentity,
+} from "../../shared/model-auth.ts";
 import type { ModelLike } from "./router.ts";
 
 interface AvailableModels {
@@ -31,12 +36,6 @@ export function registrySnapshot(ctx: { modelRegistry?: unknown }): ModelLike[] 
 }
 
 // --- Explicit model validation ------------------------------------------------
-
-/** Validation only needs a model's identity, not its capabilities. */
-interface ModelIdentity {
-  readonly provider: string;
-  readonly id: string;
-}
 
 interface AuthQueryableRegistry<T extends ModelIdentity = ModelIdentity> {
   find(provider: string, id: string): T | undefined;
@@ -83,17 +82,13 @@ export function validateExplicitModel<T extends ModelIdentity>(
   if (!model) {
     return {
       _tag: "UnknownModel",
-      message: `Unknown model "${hint}". Use "provider/model-id"; run /routing to see the models available here.`,
+      message: `${unknownModelMessage(hint)} Run /routing to see the models available here.`,
     };
   }
 
-  if (!registry.hasConfiguredAuth(model)) {
-    return {
-      _tag: "NoCredentials",
-      message:
-        `No credentials for "${model.provider}" on this machine, so "${model.provider}/${model.id}" cannot run. ` +
-        `Use /login to authenticate it, or pick a model from a provider you already have.`,
-    };
+  const credentials = checkModelCredentials(registry, model);
+  if (!credentials.ok) {
+    return { _tag: "NoCredentials", message: credentials.message };
   }
 
   return { _tag: "Ok" };

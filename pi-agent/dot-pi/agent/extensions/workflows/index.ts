@@ -74,6 +74,7 @@ import {
   type ThinkingLevel,
   type WorkflowModel,
 } from "./runner.ts";
+import { resolveAgentModel } from "./resolve-model.ts";
 import { runWorkflowSandbox } from "./sandbox.ts";
 import { safeStringify, writeFileAtomic } from "./serialization.ts";
 
@@ -515,41 +516,17 @@ export default function workflows(pi: ExtensionAPI) {
 
         return controller
           .schedule(async (runSignal) => {
-            // Model/provider resolution: default to the parent session's model.
+            // Model/provider resolution: default to the parent session's
+            // model. A named model is also credential-checked here, so an
+            // unusable one fails before the agent starts rather than on its
+            // first request. See resolve-model.ts.
             let model: WorkflowModel | undefined = ctx.model;
-            if (opts.model !== undefined || opts.provider !== undefined) {
-              const modelOpt =
-                typeof opts.model === "string" ? opts.model : undefined;
-              const providerOpt =
-                typeof opts.provider === "string" ? opts.provider : undefined;
-              if (!modelOpt)
-                return fail(
-                  `agent "${label}": \`provider\` requires \`model\` as well`,
-                );
-              let resolved: WorkflowModel | undefined;
-              if (providerOpt) {
-                resolved = ctx.modelRegistry.find(providerOpt, modelOpt);
-              } else {
-                const slash = modelOpt.indexOf("/");
-                if (slash > 0) {
-                  resolved = ctx.modelRegistry.find(
-                    modelOpt.slice(0, slash),
-                    modelOpt.slice(slash + 1),
-                  );
-                }
-                resolved ??= ctx.modelRegistry
-                  .getAll()
-                  .find((m) => m.id === modelOpt);
-              }
-              if (!resolved) {
-                const requested = providerOpt
-                  ? `${providerOpt}/${modelOpt}`
-                  : modelOpt;
-                return fail(
-                  `agent "${label}": unknown model "${requested}" (use provider/id)`,
-                );
-              }
-              model = resolved;
+            const resolution = resolveAgentModel(ctx.modelRegistry, opts);
+            if (resolution._tag === "Failed") {
+              return fail(`agent "${label}": ${resolution.message}`);
+            }
+            if (resolution._tag === "Resolved") {
+              model = resolution.model;
             }
             record.model = model?.id;
             record.contextWindow = model?.contextWindow;

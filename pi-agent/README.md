@@ -64,13 +64,18 @@ Copilot's models and here they show claude-bridge's. Both files are gitignored.
 Routing resolves against the same authenticated set, so a tier naming a model
 you have no credentials for is skipped rather than failing at spawn time.
 
-An explicitly named `model` is resolved against the full catalog and then
-checked for credentials, so the two failures stay distinguishable and both
-refuse before a session exists:
+An explicitly named model — `subagent_spawn`'s `model`, or a workflow
+`agent()` call's `model`/`provider` — is resolved against the full catalog and
+then checked for credentials, so the two failures stay distinguishable and
+both refuse before any child session exists:
 
 - `Unknown model "acme/not-real"` — no such model
 - `No credentials for "openai" … Use /login to authenticate it` — real model,
   no key here
+
+A bare model id (no provider) must be unambiguous; one offered by several
+providers is reported as ambiguous rather than resolving to whichever provider
+happened to come first.
 
 ### Subagent routing
 

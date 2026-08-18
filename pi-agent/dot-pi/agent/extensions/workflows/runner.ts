@@ -14,6 +14,7 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   defineTool,
+  ModelRegistry,
   SessionManager,
   SettingsManager,
   type AgentSession,
@@ -30,6 +31,7 @@ import {
   createChildResources,
   shutdownAndDisposeChildSession,
 } from "../shared/child-session.ts";
+import { copyRegisteredProviders } from "../shared/child-providers.ts";
 import { createToolCallTimeoutGuard } from "../shared/tool-call-timeout.ts";
 import { emptyUsage, type AgentUsage, type TranscriptEntry } from "./model.ts";
 import {
@@ -454,6 +456,15 @@ export async function runAgent(
       ...(customTools ? { customTools } : {}),
       ...childToolPolicy(),
     }));
+
+    // The child got a fresh ModelRuntime, so extension-registered providers
+    // (claude-bridge, Copilot, ...) are missing and their models would fail
+    // auth even though the parent is authenticated. See child-providers.ts.
+    copyRegisteredProviders(
+      options.modelRegistry,
+      new ModelRegistry(session.modelRuntime),
+    );
+
     await bindChildSessionExtensions(session);
     unsubscribeToolTimeout = guardWorkflowChildTools(
       session,

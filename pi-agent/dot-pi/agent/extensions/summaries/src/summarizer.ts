@@ -112,10 +112,12 @@ export function summarizeRun(options: {
         });
       }
 
-      const auth = await options.modelRegistry.getApiKeyAndHeaders(model);
-      if (!auth.ok) throw new SummaryError({ message: auth.error });
-
-      const response = await completeSimple(
+      // Go through the registry rather than pi-ai's `completeSimple`: the
+      // latter dispatches on the model's `api` field and only knows built-in
+      // APIs, so any extension-registered provider (claude-bridge, Copilot)
+      // fails with "No API provider registered for api: ...". The registry
+      // routes to the provider's own stream function and resolves auth itself.
+      const response = await options.modelRegistry.complete(
         model,
         {
           systemPrompt: SUMMARY_SYSTEM_PROMPT,
@@ -128,9 +130,6 @@ export function summarizeRun(options: {
           ],
         },
         {
-          apiKey: auth.apiKey,
-          env: auth.env,
-          headers: auth.headers,
           maxTokens: 1_000,
           maxRetries: 1,
           signal: effectSignal,
