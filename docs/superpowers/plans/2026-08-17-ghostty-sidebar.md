@@ -94,7 +94,7 @@ check "C. run-shell inherits server PATH"    "new-window"
 
 printf '%-48s' "D. join-pane preserves the process"
 pane=$(tmux -L "$SOCK" split-window -d -P -F '#{pane_id}' 'sleep 300')
-if tmux -L "$SOCK" join-pane -d -s "$pane" -t 2 2>/dev/null &&
+if tmux -L "$SOCK" join-pane -d -s "$pane" -t 0 2>/dev/null &&
    tmux -L "$SOCK" list-panes -a -F '#{pane_id} #{pane_current_command}' | grep -q "$pane sleep"; then
   echo PASS
 else
@@ -268,10 +268,19 @@ Expected: FAIL with `ImportError: cannot import name 'state'`
 
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 
 VIEWS = ("tabs", "files")
+
+_SAFE_CHARS = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def _sanitize_session(session: str) -> str:
+    """tmux permits `/` in session names; a raw name would escape or break the state dir."""
+    cleaned = _SAFE_CHARS.sub("_", session)
+    return cleaned or "gw"
 
 
 def state_dir() -> Path:
@@ -280,11 +289,11 @@ def state_dir() -> Path:
 
 
 def state_path(session: str) -> Path:
-    return state_dir() / f"{session}.json"
+    return state_dir() / f"{_sanitize_session(session)}.json"
 
 
 def fifo_path(session: str) -> Path:
-    return state_dir() / f"{session}.fifo"
+    return state_dir() / f"{_sanitize_session(session)}.fifo"
 
 
 def default_state(root: str) -> dict:
@@ -316,6 +325,11 @@ def load(session: str, root: str) -> dict:
             value = stored.get(key)
             if type(value) is type(default):
                 merged["tree"][key] = value
+        merged["tree"]["expanded"] = [
+            entry for entry in merged["tree"]["expanded"] if isinstance(entry, str)
+        ]
+        for key in ("cursor", "scroll"):
+            merged["tree"][key] = max(0, merged["tree"][key])
     return merged
 
 
@@ -338,7 +352,7 @@ def save(session: str, data: dict) -> None:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `sh ghostty/run-tests.sh`
-Expected: `OK` (7 tests)
+Expected: `OK` (7 tests). Review of this task added six more covering session-name sanitization, `expanded` element validation, cursor clamping, and real cleanup-on-failure — see commit `59a54eb`, which brings the suite to 13.
 
 - [ ] **Step 5: Commit**
 
