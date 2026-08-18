@@ -25,6 +25,7 @@ import {
 import { parseUnifiedPatch } from "./src/diff.ts";
 import { createFileEditStore } from "./src/store.ts";
 import { renderCollapsedRow } from "./src/render/row.ts";
+import { openFilePicker } from "./src/ui/picker.ts";
 
 const STATUS_KEY = "file-edits";
 const SELF = { kind: "self" } as const;
@@ -158,5 +159,21 @@ export default function (pi: ExtensionAPI) {
       // Teardown races are not worth reporting.
     }
     ui = undefined;
+  });
+
+  pi.registerCommand("files", {
+    description: "Browse files changed in this session",
+    handler: async (_args, ctx) => {
+      if (ctx.mode !== "tui") return;
+      await openFilePicker(ctx, store);
+    },
+  });
+
+  pi.registerShortcut("ctrl+f", {
+    description: "Browse changed files",
+    handler: async (ctx) => {
+      if (ctx.mode !== "tui") return;
+      await openFilePicker(ctx, store);
+    },
   });
 }
