@@ -10,6 +10,12 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-17-file-edits-tui-design.md`
 
+**Verified baseline** (branch `feature/file-edits-tui`): `subagents` 60 tests
+pass, `background-terminals` 44 tests pass. `workflows` and `shared` have no
+`package.json` and are covered only by the agent-root `tsc` project, which
+already reports pre-existing errors in `ask-user`, `file-search`, `git-info`
+and `summaries`. Those are out of scope — leave them alone.
+
 ---
 
 ## Before you start
@@ -417,10 +423,23 @@ surrounding early-return logic exactly as it is.
 ```bash
 cd pi-agent/dot-pi/agent/extensions/shared && node --test --experimental-strip-types activity-status.test.ts status-bar.test.ts
 cd ../subagents && npm run check
-cd ../workflows && npm run check
 ```
 
-Expected: tests PASS (11 total), both `npm run check` runs exit 0.
+Expected: tests PASS (11 total), `npm run check` exits 0.
+
+`workflows` and `shared` have **no `package.json`** — they are type-checked only
+by the agent-root project (`pi-agent/dot-pi/agent/tsconfig.json`). Do not run
+`npm run check` or `npm test` inside them; from inside `workflows`, npm walks up
+and runs the *root* check, which reports pre-existing errors in unrelated
+extensions. To check those two, run from `pi-agent/dot-pi/agent`:
+
+```bash
+npx tsc --noEmit -p . 2>&1 | grep -E "extensions/(workflows|shared)/"
+```
+
+Expected: no output. **Baseline note:** that same root check already reports
+pre-existing errors in `ask-user`, `file-search`, `git-info` and `summaries`.
+Those are not yours — do not fix them, and do not treat them as a regression.
 
 - [ ] **Step 6: Commit**
 
@@ -3122,10 +3141,11 @@ Add `src/observe.test.ts` to the `test` script in `package.json`, then:
 ```bash
 cd pi-agent/dot-pi/agent/extensions/file-edits && npm run check && npm test
 cd ../subagents && npm run check && npm test
-cd ../workflows && npm run check && npm test
+cd ../.. && npx tsc --noEmit -p . 2>&1 | grep -E "extensions/(workflows|shared)/"
 ```
 
-Expected: all suites PASS.
+Expected: both suites PASS; the `grep` prints nothing (`workflows` has no
+`package.json`, so it is only checked by the agent-root project).
 
 ```bash
 git add pi-agent/dot-pi/agent/extensions
@@ -3369,13 +3389,16 @@ still expands a row inline.
 
 ```bash
 cd pi-agent/dot-pi/agent/extensions
-for d in file-edits subagents workflows background-terminals; do
+for d in file-edits subagents background-terminals; do
   (cd "$d" && npm run check && npm test) || echo "FAILED: $d"
 done
 (cd shared && node --test --experimental-strip-types status-bar.test.ts activity-status.test.ts)
+cd .. && npx tsc --noEmit -p . 2>&1 | grep -E "extensions/(workflows|shared|file-edits|ui-customization)/"
 ```
 
-Expected: no `FAILED:` lines, all suites PASS.
+Expected: no `FAILED:` lines, all suites PASS, and the final `grep` prints
+nothing. Baseline for comparison: `subagents` 60 tests, `background-terminals`
+44 tests, both green before this work started.
 
 - [ ] **Step 4: Commit**
 
