@@ -1,6 +1,6 @@
 {
   "lastChangelogVersion": "0.84.2",
-  "theme": "dark",
+  "theme": "catppuccin-mocha",
   "packages": [
     "npm:pi-claude-bridge"
   ],
