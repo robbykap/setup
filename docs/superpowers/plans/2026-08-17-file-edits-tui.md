@@ -1258,11 +1258,11 @@ import { iconFor, paintIcon } from "./icons.ts";
 
 test("known extensions get their own glyph and color", () => {
   const ts = iconFor("src/router.ts");
-  assert.equal(ts.glyph, "");
+  assert.equal(ts.glyph, "\uE628");
   assert.deepEqual(ts.rgb, [137, 180, 250]);
-  assert.equal(iconFor("a/b/main.py").glyph, "");
-  assert.equal(iconFor("theme.json").glyph, "");
-  assert.equal(iconFor("README.md").glyph, "");
+  assert.equal(iconFor("a/b/main.py").glyph, "\uE73C");
+  assert.equal(iconFor("theme.json").glyph, "\uE60B");
+  assert.equal(iconFor("README.md").glyph, "\uE73E");
 });
 
 test("matching is case-insensitive", () => {
@@ -1270,18 +1270,18 @@ test("matching is case-insensitive", () => {
 });
 
 test("exact filenames win over extensions", () => {
-  assert.equal(iconFor("Dockerfile").glyph, "");
-  assert.equal(iconFor("some/dir/Dockerfile").glyph, "");
+  assert.equal(iconFor("Dockerfile").glyph, "\uE7B0");
+  assert.equal(iconFor("some/dir/Dockerfile").glyph, "\uE7B0");
 });
 
 test("unknown extensions fall back to a generic document", () => {
   const unknown = iconFor("data.xyzzy");
-  assert.equal(unknown.glyph, "");
+  assert.equal(unknown.glyph, "\uF016");
   assert.deepEqual(unknown.rgb, [166, 173, 200]);
 });
 
 test("files with no extension fall back too", () => {
-  assert.equal(iconFor("LICENSE").glyph, "");
+  assert.equal(iconFor("LICENSE").glyph, "\uF016");
 });
 
 test("paintIcon wraps the glyph in a truecolor escape", () => {
@@ -1327,35 +1327,38 @@ const RED: Rgb = [243, 139, 168];
 const SKY: Rgb = [137, 220, 235];
 const SUBTEXT: Rgb = [166, 173, 200];
 
-const FALLBACK: FileIcon = { glyph: "", rgb: SUBTEXT };
+/** Nerd-font codepoints are written as escapes on purpose: literal
+ * private-use-area characters do not survive copy/paste through every editor,
+ * and a silently-empty glyph is worse than an obviously wrong one. */
+const FALLBACK: FileIcon = { glyph: "\uF016", rgb: SUBTEXT };
 
 /** Exact filenames take precedence over extensions. */
 const BY_NAME: Record<string, FileIcon> = {
-  dockerfile: { glyph: "", rgb: BLUE },
-  makefile: { glyph: "", rgb: PEACH },
-  ".gitignore": { glyph: "", rgb: PEACH },
+  dockerfile: { glyph: "\uE7B0", rgb: BLUE },
+  makefile: { glyph: "\uE673", rgb: PEACH },
+  ".gitignore": { glyph: "\uE702", rgb: PEACH },
 };
 
 const BY_EXTENSION: Record<string, FileIcon> = {
-  ts: { glyph: "", rgb: BLUE },
-  tsx: { glyph: "", rgb: BLUE },
-  js: { glyph: "", rgb: YELLOW },
-  jsx: { glyph: "", rgb: YELLOW },
-  json: { glyph: "", rgb: YELLOW },
-  py: { glyph: "", rgb: YELLOW },
-  rs: { glyph: "", rgb: PEACH },
-  go: { glyph: "", rgb: SKY },
-  sh: { glyph: "", rgb: GREEN },
-  bash: { glyph: "", rgb: GREEN },
-  zsh: { glyph: "", rgb: GREEN },
-  nu: { glyph: "", rgb: GREEN },
-  md: { glyph: "", rgb: SUBTEXT },
-  toml: { glyph: "", rgb: PEACH },
-  yaml: { glyph: "", rgb: PEACH },
-  yml: { glyph: "", rgb: PEACH },
-  css: { glyph: "", rgb: MAUVE },
-  html: { glyph: "", rgb: RED },
-  lock: { glyph: "", rgb: SUBTEXT },
+  ts: { glyph: "\uE628", rgb: BLUE },
+  tsx: { glyph: "\uE628", rgb: BLUE },
+  js: { glyph: "\uE781", rgb: YELLOW },
+  jsx: { glyph: "\uE781", rgb: YELLOW },
+  json: { glyph: "\uE60B", rgb: YELLOW },
+  py: { glyph: "\uE73C", rgb: YELLOW },
+  rs: { glyph: "\uE7A8", rgb: PEACH },
+  go: { glyph: "\uE627", rgb: SKY },
+  sh: { glyph: "\uE795", rgb: GREEN },
+  bash: { glyph: "\uE795", rgb: GREEN },
+  zsh: { glyph: "\uE795", rgb: GREEN },
+  nu: { glyph: "\uE795", rgb: GREEN },
+  md: { glyph: "\uE73E", rgb: SUBTEXT },
+  toml: { glyph: "\uE615", rgb: PEACH },
+  yaml: { glyph: "\uE615", rgb: PEACH },
+  yml: { glyph: "\uE615", rgb: PEACH },
+  css: { glyph: "\uE749", rgb: MAUVE },
+  html: { glyph: "\uE736", rgb: RED },
+  lock: { glyph: "\uF023", rgb: SUBTEXT },
 };
 
 export function iconFor(path: string): FileIcon {
@@ -1372,13 +1375,6 @@ export function paintIcon({ glyph, rgb: [r, g, b] }: FileIcon): string {
   return `\x1b[38;2;${r};${g};${b}m${glyph}\x1b[0m`;
 }
 ```
-
-> **Note for the implementer:** the glyphs above are literal nerd-font
-> codepoints. Copy them verbatim from this plan — do not retype them, and do
-> not substitute emoji. If your editor mangles them, take the codepoints from
-> the [nerd-fonts cheat sheet](https://www.nerdfonts.com/cheat-sheet)
-> (`nf-seti-typescript` etc.) and keep the test's expected values in sync with
-> whatever you actually write.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
