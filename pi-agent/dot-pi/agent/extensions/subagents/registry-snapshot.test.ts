@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { registrySnapshot } from "./src/registry-snapshot.ts";
+import {
+  registrySnapshot,
+  validateExplicitModel,
+} from "./src/registry-snapshot.ts";
 
 const AUTHENTICATED = [
   { provider: "claude-bridge", id: "haiku" },
@@ -64,4 +67,62 @@ test("the returned array is a copy, not the registry's own", () => {
   const models = registrySnapshot({ modelRegistry: source });
   models.pop();
   assert.equal(AUTHENTICATED.length, 2);
+});
+
+// --- Explicit model validation ------------------------------------------------
+
+function authRegistry(authed: string[]) {
+  return {
+    getAll: () => ENTIRE_CATALOG,
+    getAvailable: () => AUTHENTICATED,
+    find: (provider: string, id: string) =>
+      ENTIRE_CATALOG.find((m) => m.provider === provider && m.id === id),
+    hasConfiguredAuth: (m: { provider: string; id: string }) =>
+      authed.includes(`${m.provider}/${m.id}`),
+  };
+}
+
+test("an authenticated explicit model is accepted", () => {
+  const result = validateExplicitModel(
+    authRegistry(["claude-bridge/haiku"]),
+    "claude-bridge/haiku",
+  );
+  assert.equal(result._tag, "Ok");
+});
+
+test("a model that does not exist is reported as unknown", () => {
+  const result = validateExplicitModel(authRegistry([]), "acme/nope");
+  assert.equal(result._tag, "UnknownModel");
+  assert.match(result._tag === "UnknownModel" ? result.message : "", /unknown/i);
+});
+
+test("a real model without credentials is refused before spawning", () => {
+  const result = validateExplicitModel(authRegistry([]), "openai/gpt");
+  assert.equal(result._tag, "NoCredentials");
+});
+
+test("the no-credentials message names the provider and how to fix it", () => {
+  const result = validateExplicitModel(authRegistry([]), "openai/gpt");
+  const message = result._tag === "NoCredentials" ? result.message : "";
+  assert.match(message, /openai/);
+  assert.match(message, /login/i);
+});
+
+test("the two failures are distinguishable, not one generic error", () => {
+  const unknown = validateExplicitModel(authRegistry([]), "acme/nope");
+  const unauthed = validateExplicitModel(authRegistry([]), "openai/gpt");
+  assert.notEqual(unknown._tag, unauthed._tag);
+});
+
+test("a bare model id resolves when exactly one provider offers it", () => {
+  const result = validateExplicitModel(
+    authRegistry(["openai/gpt"]),
+    "gpt",
+  );
+  assert.equal(result._tag, "Ok");
+});
+
+test("validation is skipped gracefully when the registry cannot answer", () => {
+  const result = validateExplicitModel({} as never, "openai/gpt");
+  assert.equal(result._tag, "Ok");
 });

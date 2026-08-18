@@ -70,7 +70,10 @@ import {
   describeTier,
   parseTierChoice,
 } from "./src/routing-ui.ts";
-import { registrySnapshot } from "./src/registry-snapshot.ts";
+import {
+  registrySnapshot,
+  validateExplicitModel,
+} from "./src/registry-snapshot.ts";
 import { buildModelChoices } from "../shared/model-choices.ts";
 import {
   formatActivityStatus,
@@ -447,8 +450,17 @@ export default function (pi: ExtensionAPI) {
         throw new Error(`working_dir is not a directory: ${cwd}`);
       }
 
-      // An explicit `model` bypasses the router entirely; otherwise intent is
-      // resolved here, so everything downstream sees a concrete model hint.
+      // An explicit `model` bypasses the router entirely, but is still checked
+      // for credentials here: spawning first would create a session and hold a
+      // concurrency slot only to die on the first request.
+      if (params.model) {
+        const check = validateExplicitModel(
+          ctx.modelRegistry as never,
+          params.model,
+        );
+        if (check._tag !== "Ok") throw new Error(check.message);
+      }
+
       const route = params.model
         ? undefined
         : routeSpawn(ctx, params.effort, params.needs);

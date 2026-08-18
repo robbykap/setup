@@ -62,9 +62,15 @@ machine (`getAvailable()`, not pi's ~1,275-model catalog), so at work they show
 Copilot's models and here they show claude-bridge's. Both files are gitignored.
 
 Routing resolves against the same authenticated set, so a tier naming a model
-you have no credentials for is skipped rather than failing at spawn time. An
-explicitly named `model` still resolves against the full catalog, so naming an
-unauthenticated model reports a missing key rather than a missing model.
+you have no credentials for is skipped rather than failing at spawn time.
+
+An explicitly named `model` is resolved against the full catalog and then
+checked for credentials, so the two failures stay distinguishable and both
+refuse before a session exists:
+
+- `Unknown model "acme/not-real"` — no such model
+- `No credentials for "openai" … Use /login to authenticate it` — real model,
+  no key here
 
 ### Subagent routing
 
