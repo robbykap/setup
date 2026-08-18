@@ -13,14 +13,14 @@ diff — a clean audit of one commit says nothing about the next.
 ## What was taken
 
 `file-search`, `git-info`, `ui-customization`, `model-info`, `copy-all`,
-`ask-user`, `background-terminals`, plus `extensions/shared/` files those
-depend on, and the `background-terminals` skill.
+`ask-user`, `background-terminals`, `workflows`, plus the `extensions/shared/`
+files those depend on, and the `background-terminals` skill.
 
 ## What was deliberately not taken
 
 - `firecrawl-search` — requires a paid API key and sends queries off-machine
 - `spark-strict-tools` — only fires for the `spark-deepseek` provider
-- `workflows`, `summaries` — not selected
+- `summaries` — not selected
 - `themes/github-dark-default.json` — not selected
 
 ## What was modified
@@ -56,3 +56,12 @@ Residual risks accepted:
   independently verified against the vendors' published checksums.
 - `prepare: "effect-tsgo patch"` in each extension's `package.json` runs on
   `npm install`. Install with `--ignore-scripts` to skip it.
+
+`workflows` executes orchestration code, so its isolation was probed directly
+rather than read. Inside the sandbox: `require`, `fetch`, and dynamic `import`
+are unavailable, `process` is `undefined`, `this.constructor.constructor`
+escape fails, and `globalThis` exposes only JS builtins. Benign compute still
+returns normally. The child process additionally runs under Node
+`--permission` with `--allow-fs-read` limited to the worker directory, a
+scrubbed env (`PATH` only), a 128MB heap cap, and a random IPC token
+(`sandbox.ts:84-121`).

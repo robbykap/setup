@@ -43,6 +43,7 @@ tool names — pi refuses to load both.
 | `model-info`           | Model, context use, and cost in the bottom bar              |
 | `ui-customization`     | Bottom bar layout                                           |
 | `copy-all`             | Copy the whole conversation                                 |
+| `workflows`            | Multi-phase orchestration in a permission-restricted sandbox |
 
 ## Subagent routing
 
