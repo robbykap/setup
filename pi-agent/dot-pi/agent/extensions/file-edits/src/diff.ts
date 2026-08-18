@@ -44,11 +44,15 @@ export function parseUnifiedPatch(patch: string): ParsedPatch | null {
       open = true;
       continue;
     }
-    if (!open) continue;
-    // File headers and the no-newline marker carry no diff content.
-    if (raw.startsWith("---") || raw.startsWith("+++") || raw.startsWith("\\")) {
+    // A multi-file patch starts a new file section; anything else beginning
+    // with --- or +++ inside a hunk is real content, not a header.
+    if (raw.startsWith("diff --git ")) {
+      flush();
       continue;
     }
+    if (!open) continue;
+    // "\ No newline at end of file" annotates the previous line.
+    if (raw.startsWith("\\")) continue;
 
     const marker = raw[0];
     const text = raw.slice(1);

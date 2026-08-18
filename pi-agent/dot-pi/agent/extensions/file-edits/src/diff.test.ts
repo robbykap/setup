@@ -119,3 +119,30 @@ test("hunks are separated by a gap row", () => {
   assert.equal(rows.length, 3);
   assert.equal(rows[1]!.separator, true);
 });
+
+test("a removed line that starts with -- is not mistaken for a header", () => {
+  const parsed = parseUnifiedPatch(
+    `@@ -1,2 +1,2 @@\n--- old comment\n+-- new comment\n ok\n`,
+  );
+  assert.equal(parsed?.removed, 1);
+  assert.equal(parsed?.added, 1);
+  const kinds = parsed!.hunks[0]!.lines.map((line) => line.kind);
+  assert.deepEqual(kinds, ["remove", "add", "context"]);
+  // The context line must still be numbered after the removal it follows.
+  assert.equal(parsed!.hunks[0]!.lines[2]!.oldLine, 2);
+});
+
+test("an added line that starts with ++ is not mistaken for a header", () => {
+  const parsed = parseUnifiedPatch(`@@ -1,1 +1,2 @@\n c\n+++i;\n`);
+  assert.equal(parsed?.added, 1);
+  assert.equal(parsed!.hunks[0]!.lines[1]!.text, "++i;");
+});
+
+test("a multi-file patch splits into separate hunks", () => {
+  const parsed = parseUnifiedPatch(
+    `diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,1 +1,1 @@\n-a\n+b\ndiff --git a/y b/y\n--- a/y\n+++ b/y\n@@ -5,1 +5,1 @@\n-c\n+d\n`,
+  );
+  assert.equal(parsed?.hunks.length, 2);
+  assert.equal(parsed?.hunks[1]?.oldStart, 5);
+  assert.equal(parsed?.added, 2);
+});
