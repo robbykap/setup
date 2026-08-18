@@ -1,0 +1,39 @@
+#!/bin/sh
+# Launch the Ghostty workspace: preflight, pin the interpreter, attach the tmux session.
+set -eu
+
+SELF=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(dirname "$SELF")
+MIN_TMUX=3.3
+SESSION="${1:-gw}"
+
+die() { printf '%s\n' "$1" >&2; exit 1; }
+
+command -v tmux >/dev/null 2>&1 ||
+  die "tmux not found. Install it with:  brew install tmux"
+
+version=$(tmux -V | sed 's/^tmux //')
+oldest=$(printf '%s\n%s\n' "$MIN_TMUX" "$version" | sort -V | head -1)
+[ "$oldest" = "$MIN_TMUX" ] ||
+  die "tmux $MIN_TMUX or newer required (found $version). Upgrade with:  brew upgrade tmux"
+
+pick_python() {
+  for candidate in "${GW_PYTHON:-}" /opt/homebrew/bin/python3.13 /usr/local/bin/python3.13 python3; do
+    [ -n "$candidate" ] || continue
+    command -v "$candidate" >/dev/null 2>&1 || continue
+    if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+      command -v "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+GW_PYTHON=$(pick_python) ||
+  die "Python 3.11 or newer not found. Install it with:  brew install python@3.13"
+
+export GW_PYTHON
+export PYTHONPATH="$ROOT/lib${PYTHONPATH:+:$PYTHONPATH}"
+export PATH="$SELF:$PATH"
+
+exec tmux -L gw -f "$ROOT/tmux/tmux.conf" new-session -A -s "$SESSION" -c "$PWD"
