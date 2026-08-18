@@ -15,7 +15,7 @@ class TestDraw(unittest.TestCase):
 
     def test_tabs_view_renders_window_names(self):
         output = sidebar_main.compose(
-            "s1", root=str(self.root), width=24, height=10, list_windows=lambda: "1\tnvim\t1\t1\t0\t0"
+            "s1", root=str(self.root), width=24, height=10, list_windows=lambda: "1|1|1|0|0|nvim"
         )
         self.assertIn("nvim", output)
         self.assertIn("TABS", output)
@@ -29,7 +29,7 @@ class TestDraw(unittest.TestCase):
 
     def test_output_is_crlf_separated_for_raw_terminal(self):
         output = sidebar_main.compose(
-            "s1", root=str(self.root), width=24, height=10, list_windows=lambda: "1\ta\t1\t1\t0\t0"
+            "s1", root=str(self.root), width=24, height=10, list_windows=lambda: "1|1|1|0|0|a"
         )
         body = output.replace(sidebar_main.CLEAR, "").replace(sidebar_main.HIDE_CURSOR, "")
         self.assertIn("\r\n", body)
