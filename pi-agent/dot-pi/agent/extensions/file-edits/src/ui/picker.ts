@@ -25,17 +25,30 @@ import {
 import { createViewerState, openDiffViewer, type ViewerState } from "./viewer.ts";
 
 class FilePicker implements Component {
+  private tui: TUI;
+  private theme: Theme;
+  private keybindings: KeybindingsManager;
+  private store: FileEditStore;
+  private state: PickerState;
+  private done: (value: string | null) => void;
+
   private closed = false;
   private unsubscribe: () => void;
 
   constructor(
-    private tui: TUI,
-    private theme: Theme,
-    private keybindings: KeybindingsManager,
-    private store: FileEditStore,
-    private state: PickerState,
-    private done: (value: string | null) => void,
+    tui: TUI,
+    theme: Theme,
+    keybindings: KeybindingsManager,
+    store: FileEditStore,
+    state: PickerState,
+    done: (value: string | null) => void,
   ) {
+    this.tui = tui;
+    this.theme = theme;
+    this.keybindings = keybindings;
+    this.store = store;
+    this.state = state;
+    this.done = done;
     this.unsubscribe = store.subscribe(() => this.tui.requestRender());
   }
 

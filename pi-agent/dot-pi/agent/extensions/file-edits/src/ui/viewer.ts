@@ -47,20 +47,37 @@ function marker(kind: DiffLine["kind"]) {
 }
 
 class DiffViewer implements Component {
+  private tui: TUI;
+  private theme: Theme;
+  private keybindings: KeybindingsManager;
+  private store: FileEditStore;
+  private path: string;
+  private state: ViewerState;
+  private paths: ReadonlyArray<string>;
+  private done: (value: ViewerExit) => void;
+
   private offset = 0;
   private closed = false;
   private unsubscribe: () => void;
 
   constructor(
-    private tui: TUI,
-    private theme: Theme,
-    private keybindings: KeybindingsManager,
-    private store: FileEditStore,
-    private path: string,
-    private state: ViewerState,
-    private paths: ReadonlyArray<string>,
-    private done: (value: ViewerExit) => void,
+    tui: TUI,
+    theme: Theme,
+    keybindings: KeybindingsManager,
+    store: FileEditStore,
+    path: string,
+    state: ViewerState,
+    paths: ReadonlyArray<string>,
+    done: (value: ViewerExit) => void,
   ) {
+    this.tui = tui;
+    this.theme = theme;
+    this.keybindings = keybindings;
+    this.store = store;
+    this.path = path;
+    this.state = state;
+    this.paths = paths;
+    this.done = done;
     this.unsubscribe = store.subscribe(() => this.tui.requestRender());
   }
 
