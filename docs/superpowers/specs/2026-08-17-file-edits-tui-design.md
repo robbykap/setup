@@ -251,3 +251,37 @@ Pure modules get `*.test.ts` beside them, per repository convention:
 3. Picker
 4. Viewer, including split layout
 5. Child-session observation
+
+## As built — corrections to this design
+
+Implemented on `feature/file-edits-tui`. Three things in the design above turned
+out to be wrong once the code met pi's actual behavior. They are recorded here
+rather than silently edited, because the reasoning matters.
+
+**Collapsing happens in `renderCall`, not `renderResult`.** This document
+assumed the built-in `edit` tool draws its diff from `renderResult`. It does
+not: `renderCall` builds the diff component (`dist/core/tools/edit.js:229`),
+while `renderResult` only appends a summary line on success. Overriding
+`renderResult` alone therefore made the transcript *longer*, not shorter. The
+extension now owns both slots: `renderCall` draws the collapsed row,
+`renderResult` returns an empty component, and both delegate to the built-ins
+when the row is expanded or the call failed. The base `renderResult` is still
+invoked on the success path purely for its side effect — it writes the applied
+diff back into the call component, so an expanded row shows what was applied
+rather than what was predicted from the arguments.
+
+**The shortcut is `alt+e`, not `ctrl+f`.** `ctrl+f` is a default binding for
+`tui.editor.cursorRight` (`pi-tui/dist/keybindings.js:18`) and is not on pi's
+reserved list, so registering it would have silently taken forward-char away
+from the editor. The documented fallback `ctrl+shift+f` is also bound. `alt+e`
+is unbound in both pi-tui and the agent core.
+
+**Child edits are reported on `tool_execution_end`, not `_start`.** The path is
+only available on `_start` and the success flag only on `_end`, so the two are
+correlated by `toolCallId`. Reporting on `_start` alone listed failed edits as
+changes.
+
+Two known limits, accepted rather than fixed: per-call rows exist only in
+memory, so a resumed session renders historical edits with pi's built-in view;
+and when a subagent touches a file this session already edited, the viewer's
+counts switch from session-relative to HEAD-relative once the git diff resolves.
