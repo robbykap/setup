@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from gwsidebar import cmd_main, state
 
@@ -87,6 +88,76 @@ class TestVerbs(unittest.TestCase):
         cmd_main.main(["--session", "s1", "root", empty])
         self.assertEqual(cmd_main.main(["--session", "s1", "down"]), 0)
         self.assertEqual(cmd_main.main(["--session", "s1", "expand"]), 0)
+
+
+class FakeTmux:
+    """Stands in for tmuxio: canned query answers, recorded commands."""
+
+    def __init__(self, current_command="zsh", pane_id="%1"):
+        self.answers = {"#{pane_current_command}": current_command, "#{pane_id}": pane_id}
+        self.sent = []
+        self.messages = []
+
+    def query(self, fmt, runner=None):
+        return self.answers.get(fmt, "")
+
+    def run(self, *args, runner=None):
+        if args and args[0] == "send-keys":
+            self.sent.append(args)
+        if args and args[0] == "display-message":
+            self.messages.append(args)
+        return self
+
+
+class TestActivate(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["XDG_STATE_HOME"] = self.tmp
+        os.environ["EDITOR"] = "nvim"
+        self.root = Path(tempfile.mkdtemp())
+        (self.root / "src").mkdir()
+        (self.root / "notes one.md").write_text("")
+        state.save("s1", state.default_state(str(self.root)))
+        self.fake = FakeTmux()
+        patcher = mock.patch.object(cmd_main, "tmuxio", self.fake)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_activate_on_directory_expands_it(self):
+        cmd_main.main(["--session", "s1", "activate"])
+        self.assertEqual(state.load("s1", str(self.root))["tree"]["expanded"], [str(self.root / "src")])
+        self.assertEqual(self.fake.sent, [])
+
+    def test_activate_on_file_sends_editor_command(self):
+        cmd_main.main(["--session", "s1", "down"])
+        cmd_main.main(["--session", "s1", "activate"])
+        self.assertEqual(len(self.fake.sent), 1)
+        command = self.fake.sent[0][3]
+        self.assertIn("nvim", command)
+        self.assertIn("notes one.md", command)
+
+    def test_paths_with_spaces_are_quoted(self):
+        cmd_main.main(["--session", "s1", "down"])
+        cmd_main.main(["--session", "s1", "activate"])
+        self.assertIn("'", self.fake.sent[0][3])
+
+    def test_nothing_is_sent_when_a_program_is_running(self):
+        self.fake.answers["#{pane_current_command}"] = "psql"
+        cmd_main.main(["--session", "s1", "down"])
+        cmd_main.main(["--session", "s1", "activate"])
+        self.assertEqual(self.fake.sent, [])
+        self.assertTrue(self.fake.messages)
+
+    def test_cd_sends_directory_of_selection(self):
+        cmd_main.main(["--session", "s1", "cd"])
+        self.assertIn("cd ", self.fake.sent[0][3])
+        self.assertIn("src", self.fake.sent[0][3])
+
+    def test_cd_on_a_file_uses_its_parent_directory(self):
+        cmd_main.main(["--session", "s1", "down"])
+        cmd_main.main(["--session", "s1", "cd"])
+        self.assertIn(str(self.root), self.fake.sent[0][3])
+        self.assertNotIn("notes one.md", self.fake.sent[0][3])
 
 
 if __name__ == "__main__":

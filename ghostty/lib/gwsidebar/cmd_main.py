@@ -2,11 +2,24 @@
 
 import argparse
 import os
+import shlex
 from pathlib import Path
 
 from . import state, tmuxio, tree
 
 MOVES = {"up": -1, "down": 1}
+SHELLS = {"sh", "bash", "zsh", "fish", "nu"}
+
+
+def send_to_shell(command: str) -> bool:
+    """Type `command` into the active pane, but only if a shell is what is running there."""
+    running = tmuxio.query("#{pane_current_command}")
+    if running not in SHELLS:
+        tmuxio.run("display-message", f"sidebar: {running or 'a program'} is running — not sending")
+        return False
+    pane = tmuxio.query("#{pane_id}")
+    tmuxio.run("send-keys", "-t", pane, command, "Enter")
+    return True
 
 
 def poke(session: str) -> None:
@@ -82,6 +95,25 @@ def apply_verb(data: dict, verb: str, argument) -> int:
             settings["cursor"] = parent
             expanded.discard(nodes[parent].path)
         settings["expanded"] = sorted(expanded)
+        return 0
+
+    if verb == "activate":
+        node, _ = selected(data)
+        if node is None:
+            return 0
+        if node.is_dir:
+            settings["expanded"] = sorted(tree.toggle(set(settings["expanded"]), node.path))
+            return 0
+        editor = os.environ.get("EDITOR", "vi")
+        send_to_shell(f"{editor} {shlex.quote(node.path)}")
+        return 0
+
+    if verb == "cd":
+        node, _ = selected(data)
+        if node is None:
+            return 0
+        target = node.path if node.is_dir else str(Path(node.path).parent)
+        send_to_shell(f"cd {shlex.quote(target)}")
         return 0
 
     return 2
