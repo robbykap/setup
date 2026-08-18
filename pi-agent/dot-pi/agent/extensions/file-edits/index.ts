@@ -172,7 +172,7 @@ export default function (pi: ExtensionAPI) {
     description: "Browse files changed in this session",
     handler: async (_args, ctx) => {
       if (ctx.mode !== "tui") return;
-      await browseChangedFiles(ctx, store, viewerState);
+      await browseChangedFiles(ctx, store, ctx.cwd, viewerState);
     },
   });
 
@@ -180,7 +180,7 @@ export default function (pi: ExtensionAPI) {
     description: "Browse changed files",
     handler: async (ctx) => {
       if (ctx.mode !== "tui") return;
-      await browseChangedFiles(ctx, store, viewerState);
+      await browseChangedFiles(ctx, store, ctx.cwd, viewerState);
     },
   });
 }

@@ -194,6 +194,7 @@ export async function openFilePicker(
 export async function browseChangedFiles(
   ctx: ExtensionContext,
   store: FileEditStore,
+  cwd: string,
   state: ViewerState = createViewerState(),
 ) {
   while (true) {
@@ -202,7 +203,7 @@ export async function browseChangedFiles(
 
     let current: string | null = picked;
     while (current) {
-      const exit = await openDiffViewer(ctx, store, current, state);
+      const exit = await openDiffViewer(ctx, store, current, state, cwd);
       current = exit ? exit.next : null;
     }
   }

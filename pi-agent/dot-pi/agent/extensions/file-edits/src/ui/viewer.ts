@@ -15,6 +15,7 @@ import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { pairRows, type SplitRow } from "../diff.ts";
 import type { DiffLine, FileChange } from "../domain.ts";
+import { diffAgainstHead } from "../git-diff.ts";
 import { iconFor, paintIcon } from "../icons.ts";
 import { wordSpans } from "../intraline.ts";
 import type { FileEditStore } from "../store.ts";
@@ -255,7 +256,19 @@ export async function openDiffViewer(
   store: FileEditStore,
   path: string,
   state: ViewerState,
+  cwd: string,
 ): Promise<ViewerExit> {
+  const change = store.get(path);
+  if (change?.hunksPending) {
+    const resolved = diffAgainstHead(cwd, path);
+    if (resolved) {
+      store.resolveHunks(path, {
+        hunks: resolved.hunks,
+        added: resolved.added,
+        removed: resolved.removed,
+      });
+    }
+  }
   return ctx.ui.custom<ViewerExit>(
     (tui, theme, keybindings, done) =>
       new DiffViewer(tui, theme, keybindings, store, path, state, done),
