@@ -15,8 +15,21 @@ cd ~/.pi/agent && npm install --ignore-scripts
 `--ignore-scripts` skips each extension's `prepare: "effect-tsgo patch"` hook.
 Drop the flag if you want it to run.
 
+Each extension has its own dependencies, so the per-extension install matters:
+
+```sh
+cd ~/.pi/agent/extensions && for d in */; do
+  [ -f "$d/package.json" ] && (cd "$d" && npm install --ignore-scripts)
+done
+```
+
 Secrets (`auth.json`, `models-store.json`) and generated state (`node_modules/`,
-`bin/`, `sessions/`) are intentionally not tracked.
+`bin/`, `sessions/`) are intentionally not tracked. `settings.json` is tracked
+on purpose, as a reference for a new machine.
+
+`background-terminals` registers `bg_start` / `bg_status` / `bg_list` /
+`bg_kill`. It replaces the older `tasks` extension, which registered the same
+tool names — pi refuses to load both.
 
 ## Extensions
 
