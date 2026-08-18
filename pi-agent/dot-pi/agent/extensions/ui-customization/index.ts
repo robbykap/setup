@@ -262,19 +262,18 @@ export default function uiCustomization(pi: ExtensionAPI) {
   let themeRemovalTimers: Array<ReturnType<typeof setTimeout>> = [];
   let footerData: ReadonlyFooterDataProvider | undefined;
   let statusContext: ExtensionContext | undefined;
+  let statusBarInstalled = false;
 
   const stopModelListener = pi.events.on(MODEL_INFO_CHANNEL, (value) => {
     if (!isModelInfoState(value)) return;
     modelInfo = value;
     requestRender?.();
-    refreshStatusBar();
   });
 
   const stopGitListener = pi.events.on(GIT_INFO_CHANNEL, (value) => {
     if (!isGitInfoState(value)) return;
     gitInfo = value;
     requestRender?.();
-    refreshStatusBar();
   });
 
   function scheduleThemeRemoval(tui: DashboardTui) {
@@ -290,18 +289,19 @@ export default function uiCustomization(pi: ExtensionAPI) {
     }
   }
 
-  /** One shared line above the editor. Cleared entirely when nothing is
-   * active, so the row does not sit there empty. */
-  function refreshStatusBar() {
+  /** The row is registered once and then decides for itself what to draw:
+   * setStatus() only triggers a repaint, it never re-runs widget registration,
+   * so registration must not depend on whether anything is active right now.
+   * An empty render costs no vertical space — the container spaces itself the
+   * same way whether or not a widget is registered. */
+  function installStatusBar() {
     const ctx = statusContext;
-    if (!ctx || ctx.mode !== "tui" || !footerData) return;
-    const statuses = footerData.getExtensionStatuses();
-    if (statuses.size === 0) {
-      ctx.ui.setWidget(STATUS_WIDGET_KEY, undefined);
-      return;
-    }
+    if (!ctx || ctx.mode !== "tui" || statusBarInstalled) return;
+    statusBarInstalled = true;
     ctx.ui.setWidget(STATUS_WIDGET_KEY, (_tui, theme) => ({
       render(width: number) {
+        const statuses = footerData?.getExtensionStatuses();
+        if (!statuses || statuses.size === 0) return [];
         const line = composeStatusBar(statuses, width, theme);
         return line ? [line] : [];
       },
@@ -409,7 +409,7 @@ export default function uiCustomization(pi: ExtensionAPI) {
 
     ctx.ui.setTitle(`pi · ${title}`);
     pi.events.emit(REFRESH_CHANNEL, undefined);
-    refreshStatusBar();
+    installStatusBar();
   }
 
   pi.on("session_start", (_event, ctx) => {
@@ -437,5 +437,6 @@ export default function uiCustomization(pi: ExtensionAPI) {
     }
     footerData = undefined;
     statusContext = undefined;
+    statusBarInstalled = false;
   });
 }
