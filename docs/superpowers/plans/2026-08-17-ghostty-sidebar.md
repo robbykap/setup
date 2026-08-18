@@ -2347,3 +2347,88 @@ git commit -m "feat: add ghostty config, installer, and docs"
 - [ ] Opening Ghostty lands in the workspace with the sidebar visible
 - [ ] `prefix + Tab` switches views; `prefix + e` then `j`/`k`/`Enter` navigates and opens a file
 - [ ] Creating and switching tabs moves the sidebar without duplicating it
+
+---
+
+## Amendments (post-review, applied in commits a2b293a and d01112b)
+
+Code review after Task 5 found defects in this plan's own code. The shipped implementation
+diverges from the task text above in the following ways. **The shipped code is correct; the task
+text above is retained for history.**
+
+### A1. Tab-separated format was not locale-safe (Critical)
+
+Task 5's `FORMAT` joined fields with a literal tab. Under a non-UTF-8 locale, tmux rewrites control
+characters in format output to `_`. Verified on tmux 3.7b:
+
+```
+LC_ALL=C.UTF-8  ->  "0\tzsh"   (bytes 30 09 7a 73 68)
+LC_ALL=C        ->  "0_zsh"    (bytes 30 5f 7a 73 68)
+LC_ALL=C, "|"   ->  "0|zsh"    (printable separator survives)
+```
+
+Every line would collapse to one field, `parse` would skip them all, and the tab list would render
+empty — silently, with nothing for `compose`'s error handler to catch. It appeared to work only
+because CPython's PEP 538 C-locale coercion injects `LC_CTYPE=C.UTF-8`; it breaks under `LC_ALL=C`,
+`PYTHONCOERCECLOCALE=0`, or launch from launchd without `LANG` — which is exactly how a GUI terminal
+starts.
+
+Shipped instead: a printable separator, with `window_name` moved LAST so a name containing the
+separator cannot corrupt the split.
+
+```python
+FIELDS = (
+    "#{window_index}",
+    "#{window_active}",
+    "#{window_panes}",
+    "#{window_zoomed_flag}",
+    "#{window_bell_flag}",
+    "#{window_name}",
+)
+SEP = "|"
+FORMAT = SEP.join(FIELDS)
+```
+
+and in `parse`, bound the split so the trailing name absorbs any separators:
+
+```python
+        fields = line.split(SEP, len(FIELDS) - 1)
+```
+
+Field positions become index=0, active=1, panes=2, zoomed=3, bell=4, name=5. Test fixtures in
+`test_tabs.py` and `test_sidebar_main.py` were updated to match.
+
+### A2. The tmux boundary was not total (Important)
+
+`subprocess.run` raises `FileNotFoundError` when the binary is missing, before returning — so
+`query`'s returncode guard and `session_name`'s fallback never ran, and both `main()` functions call
+`session_name()` outside any try block. Shipped fix:
+
+```python
+def _default_runner(args, **kwargs):
+    try:
+        return subprocess.run(args, capture_output=True, text=True, check=False, **kwargs)
+    except OSError as error:
+        return subprocess.CompletedProcess(args, 127, "", str(error))
+```
+
+### A3. `send_to_shell` was fail-closed only by accident (Important)
+
+`query` returns `""` both when tmux fails and when a format legitimately expands to empty. Nothing
+recorded that `""` must fail closed, the failure message claimed "a program is running" when the
+truth was "tmux was unreachable", and `pane_id` was used unchecked — tmux accepts `send-keys -t ""`
+and routes it to the *current* pane. Shipped fix returns `False` early on an empty command or an
+empty pane id, with distinct messages, and a comment on `SHELLS` recording the invariant.
+
+### A4. Test coverage gaps
+
+Added: a real-tmux integration test that validates `FORMAT` against the actual binary (skipped when
+tmux is absent, uses its own `gwtest` socket, runs under `LC_ALL=C`) — this is the gap A1 fell
+through; missing-binary tests for `run`/`query`/`session_name`; a non-numeric panes case; a
+separator-in-name case; and fail-closed tests for `send_to_shell`. Two self-referential or
+under-specified assertions were tightened.
+
+### A5. Test counts in the task text are stale
+
+Every "Expected: OK (N tests)" above predates the review-driven tests. Actual count after Task 12 is
+**105**. Treat the task counts as historical, not as a tripwire.
