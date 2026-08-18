@@ -75,10 +75,8 @@ import {
   validateExplicitModel,
 } from "./src/registry-snapshot.ts";
 import { buildModelChoices } from "../shared/model-choices.ts";
-import {
-  formatActivityStatus,
-  formatContextUtilization,
-} from "./src/format.ts";
+import { formatContextUtilization } from "./src/format.ts";
+import { formatActivityStatus } from "../shared/activity-status.ts";
 import { SubagentManager, type SubagentManagerShape } from "./src/manager.ts";
 import {
   buildSubagentResultMessage,
@@ -315,7 +313,7 @@ export default function (pi: ExtensionAPI) {
     const running = subs.filter((snap) => snap.status === "running").length;
     const failed = subs.filter((snap) => snap.status === "error").length;
     const done = subs.length - running - failed;
-    const segment = formatActivityStatus(ui.theme, { running, done, failed });
+    const segment = formatActivityStatus(ui.theme, "subagents", { running, done, failed });
     ui.setStatus("subagents", segment);
   };
 

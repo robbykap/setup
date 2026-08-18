@@ -1,9 +1,6 @@
 /**
- * Formatting helpers (self-contained copies of the v1 shared helpers:
- * context-utilization + activity-status).
+ * Context utilization formatting helpers.
  */
-
-import type { Theme } from "@earendil-works/pi-coding-agent";
 
 export interface ContextUtilization {
   /** Current conversation context occupancy; undefined while unknown. */
@@ -49,29 +46,4 @@ export function formatContextUtilization(usage: ContextUtilization) {
   return `${percent === undefined ? "?" : percent}%/${formatCompactTokens(capacity)}`;
 }
 
-interface ActivityCounts {
-  running: number;
-  done: number;
-  failed: number;
-}
 
-const GLYPH = "⌘";
-
-export function formatActivityStatus(
-  theme: Theme,
-  counts: ActivityCounts,
-): string | undefined {
-  const parts: string[] = [];
-  if (counts.running > 0) {
-    parts.push(theme.fg("warning", `${counts.running} running`));
-  }
-  if (counts.done > 0) {
-    parts.push(theme.fg("success", `${counts.done} done`));
-  }
-  if (counts.failed > 0) {
-    parts.push(theme.fg("error", `${counts.failed} failed`));
-  }
-  if (parts.length === 0) return undefined;
-
-  return `${theme.fg("accent", GLYPH)} ${parts.join(theme.fg("dim", " · "))}`;
-}
