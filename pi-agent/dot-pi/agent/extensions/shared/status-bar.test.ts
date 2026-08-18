@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { composeStatusBar, SEGMENT_ORDER } from "./status-bar.ts";
 
 // A theme stub: every helper is identity, so tests assert on plain text.
@@ -49,12 +50,22 @@ test("drops lowest-priority segments whole when the line does not fit", () => {
 test("truncates the last survivor rather than returning nothing", () => {
   const statuses = new Map([["file-edits", "a very long files segment"]]);
   const line = composeStatusBar(statuses, 10, theme);
-  assert.equal(line, "a very lo\x1b[0m…\x1b[0m");
+  const stripped = line!.replace(/\x1b\[[0-9;]*m/g, "");
+  assert.equal(stripped, "a very lo…");
+  assert.equal(visibleWidth(line!), 10);
 });
 
 test("multi-line status text is flattened to one line", () => {
   const statuses = new Map([["subagents", "2 running\n1 done"]]);
   assert.equal(composeStatusBar(statuses, 80, theme), "2 running 1 done");
+});
+
+test("whitespace-only status text is dropped", () => {
+  const statuses = new Map([
+    ["file-edits", "   "],
+    ["subagents", "\n\n"],
+  ]);
+  assert.equal(composeStatusBar(statuses, 80, theme), undefined);
 });
 
 test("segment order is the documented one", () => {

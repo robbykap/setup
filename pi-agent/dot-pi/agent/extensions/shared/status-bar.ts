@@ -72,7 +72,5 @@ export function composeStatusBar(
     used += cost;
   }
 
-  if (kept.length === 0) kept.push(segments[0]!.text);
-
   return truncateToWidth(kept.join(separator), width, theme.fg("dim", "…"));
 }
