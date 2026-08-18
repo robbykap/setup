@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseUnifiedPatch, largestHunk } from "./diff.ts";
+import { parseUnifiedPatch, largestHunk, pairRows } from "./diff.ts";
 
 const PATCH = `--- a/src/router.ts
 +++ b/src/router.ts
@@ -70,4 +70,52 @@ test("largestHunk picks the hunk with the most changed lines", () => {
 
 test("largestHunk returns undefined for no hunks", () => {
   assert.equal(largestHunk([]), undefined);
+});
+
+test("context lines appear on both sides of a split", () => {
+  const { hunks } = parseUnifiedPatch(`@@ -1,1 +1,1 @@\n a\n`)!;
+  assert.deepEqual(
+    pairRows(hunks).map((row) => [row.left?.text, row.right?.text]),
+    [["a", "a"]],
+  );
+});
+
+test("a removal and an addition line up on one row", () => {
+  const { hunks } = parseUnifiedPatch(`@@ -1,1 +1,1 @@\n-old\n+new\n`)!;
+  assert.deepEqual(
+    pairRows(hunks).map((row) => [row.left?.text, row.right?.text]),
+    [["old", "new"]],
+  );
+});
+
+test("extra additions get empty left cells", () => {
+  const { hunks } = parseUnifiedPatch(`@@ -1,1 +1,3 @@\n-old\n+a\n+b\n+c\n`)!;
+  assert.deepEqual(
+    pairRows(hunks).map((row) => [row.left?.text, row.right?.text]),
+    [
+      ["old", "a"],
+      [undefined, "b"],
+      [undefined, "c"],
+    ],
+  );
+});
+
+test("extra removals get empty right cells", () => {
+  const { hunks } = parseUnifiedPatch(`@@ -1,3 +1,1 @@\n-a\n-b\n+c\n`)!;
+  assert.deepEqual(
+    pairRows(hunks).map((row) => [row.left?.text, row.right?.text]),
+    [
+      ["a", "c"],
+      ["b", undefined],
+    ],
+  );
+});
+
+test("hunks are separated by a gap row", () => {
+  const { hunks } = parseUnifiedPatch(
+    `@@ -1,1 +1,1 @@\n a\n@@ -9,1 +9,1 @@\n b\n`,
+  )!;
+  const rows = pairRows(hunks);
+  assert.equal(rows.length, 3);
+  assert.equal(rows[1]!.separator, true);
 });

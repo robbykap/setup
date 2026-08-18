@@ -85,3 +85,48 @@ export function largestHunk(hunks: ReadonlyArray<Hunk>): Hunk | undefined {
   }
   return best;
 }
+
+/** One screen row of the split view: the old side, the new side, or both. */
+export interface SplitRow {
+  readonly left?: DiffLine;
+  readonly right?: DiffLine;
+  /** A gap between hunks, drawn as a divider rather than as content. */
+  readonly separator?: true;
+}
+
+/**
+ * Pair removals with additions so a change occupies the same screen row on
+ * both sides. This is why the panes are composed per row rather than built
+ * from two independent HStack children.
+ */
+export function pairRows(hunks: ReadonlyArray<Hunk>): SplitRow[] {
+  const rows: SplitRow[] = [];
+
+  hunks.forEach((hunk, index) => {
+    if (index > 0) rows.push({ separator: true });
+
+    let removals: DiffLine[] = [];
+    let additions: DiffLine[] = [];
+
+    const drain = () => {
+      const height = Math.max(removals.length, additions.length);
+      for (let offset = 0; offset < height; offset += 1) {
+        rows.push({ left: removals[offset], right: additions[offset] });
+      }
+      removals = [];
+      additions = [];
+    };
+
+    for (const line of hunk.lines) {
+      if (line.kind === "remove") removals.push(line);
+      else if (line.kind === "add") additions.push(line);
+      else {
+        drain();
+        rows.push({ left: line, right: line });
+      }
+    }
+    drain();
+  });
+
+  return rows;
+}
