@@ -36,6 +36,18 @@ import type {
 } from "../domain.ts";
 import { SendError, SpawnError } from "../domain.ts";
 import { createToolCallTimeoutGuard } from "../../../shared/tool-call-timeout.ts";
+import type { CommandTool } from "../../../shared/command-log.ts";
+import {
+  describeToolCommand,
+  isCommandTool,
+  toolResultText,
+} from "../../../shared/command-log.ts";
+
+/** A command in flight: named at tool_execution_start, resolved at the end. */
+interface ChildCommandCall {
+  readonly tool: CommandTool;
+  readonly command: string;
+}
 
 const CHILD_SHUTDOWN_TIMEOUT_MS = 5_000;
 
@@ -331,6 +343,9 @@ const makePiSession = (
     /** Path touched by an in-flight edit/write, keyed by toolCallId; reported
      * to the parent only if the tool ends without an error. */
     const touchedByToolCallId = new Map<string, string>();
+    /** Shell commands, captured at start (where the arguments are) and
+     * reported at the matching end (where the outcome is). */
+    const commandByToolCallId = new Map<string, ChildCommandCall>();
 
     const events = yield* Queue.make<SubagentEvent, Cause.Done>();
     const emit = (event: SubagentEvent) => {
@@ -458,6 +473,12 @@ const makePiSession = (
             const target = (event.args as { path?: unknown } | undefined)?.path;
             if (typeof target === "string") touchedByToolCallId.set(event.toolCallId, target);
           }
+          if (isCommandTool(event.toolName)) {
+            commandByToolCallId.set(event.toolCallId, {
+              tool: event.toolName,
+              command: describeToolCommand(event.toolName, event.args),
+            });
+          }
           emit({
             _tag: "ToolStart",
             toolId: event.toolCallId,
@@ -477,6 +498,18 @@ const makePiSession = (
           touchedByToolCallId.delete(event.toolCallId);
           if (touched !== undefined && !event.isError) {
             task.parent.onFileTouched?.(touched);
+          }
+          const ran = commandByToolCallId.get(event.toolCallId);
+          commandByToolCallId.delete(event.toolCallId);
+          if (ran) {
+            // Unlike a file edit, a failed command is worth reporting: it is
+            // exactly the one you go looking for afterwards.
+            task.parent.onCommandRun?.({
+              tool: ran.tool,
+              command: ran.command,
+              status: event.isError ? "failed" : "ok",
+              output: toolResultText(event.result),
+            });
           }
           emit({
             _tag: "ToolEnd",

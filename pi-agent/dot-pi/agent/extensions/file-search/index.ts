@@ -50,6 +50,10 @@ import {
   RG_TOOL_DESCRIPTION,
 } from "./src/prompt.ts";
 import { discardCapturedOutput, executeSearchProcess } from "./src/process.ts";
+import {
+  COMMAND_CHANNEL,
+  type CommandLogEvent,
+} from "../shared/command-log.ts";
 
 export function makeBinaryInitializers(
   binDir: string,
@@ -114,6 +118,67 @@ function unwrapToolExit<A, E>(exit: Exit.Exit<A, E>, tool: "fd" | "rg") {
     throw new Error(`${tool} search was cancelled.`);
   }
   throw new Error(causeMessage(exit.cause));
+}
+
+/** The shape of a search result this logger needs; both tools' results are
+ * structurally wider than this. */
+interface SearchToolResultLike {
+  readonly content: ReadonlyArray<{ readonly type: string; readonly text?: string }>;
+  readonly details?: { readonly fullOutputPath?: string } | undefined;
+}
+
+/**
+ * Announce the search to the session command log, so /cmds can list it beside
+ * the bash calls. Emitting is best-effort and never changes what the tool
+ * returns: an unwrapped failure is re-thrown exactly as it arrived.
+ */
+function unwrapAndLog<A extends SearchToolResultLike, E>(
+  pi: ExtensionAPI,
+  tool: "fd" | "rg",
+  args: readonly string[],
+  cwd: string,
+  startedAt: number,
+  exit: Exit.Exit<A, E>,
+): A {
+  const emit = (event: CommandLogEvent) => {
+    try {
+      pi.events.emit(COMMAND_CHANNEL, event);
+    } catch {
+      // A listener that throws must not fail the search.
+    }
+  };
+  const base = {
+    tool,
+    command: [tool, ...args].join(" "),
+    cwd,
+    origin: { kind: "session" },
+    durationMs: Date.now() - startedAt,
+  } as const;
+
+  try {
+    const result = unwrapToolExit(exit, tool);
+    const text = result.content
+      .filter((part) => part.type === "text" && typeof part.text === "string")
+      .map((part) => part.text as string)
+      .join("\n");
+    emit({
+      ...base,
+      status: "ok",
+      output: text,
+      ...(result.details?.fullOutputPath === undefined
+        ? {}
+        : { fullOutputPath: result.details.fullOutputPath }),
+    });
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    emit({
+      ...base,
+      status: message.endsWith("was cancelled.") ? "aborted" : "failed",
+      output: message,
+    });
+    throw error;
+  }
 }
 
 export default function fileSearchTools(pi: ExtensionAPI) {
@@ -216,9 +281,11 @@ export default function fileSearchTools(pi: ExtensionAPI) {
     parameters: fdParameters(),
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const startedAt = Date.now();
+      const args = buildFdArgs(params);
       const exit = await Effect.runPromiseExit(
         Effect.gen(function* () {
-          const outcome = yield* runSearch("fd", buildFdArgs(params), ctx);
+          const outcome = yield* runSearch("fd", args, ctx);
           if (outcome.noMatches) {
             return {
               content: [{ type: "text", text: "No files found" }],
@@ -243,7 +310,7 @@ export default function fileSearchTools(pi: ExtensionAPI) {
         }),
         signal ? { signal } : undefined,
       );
-      return unwrapToolExit(exit, "fd");
+      return unwrapAndLog(pi, "fd", args, ctx.cwd, startedAt, exit);
     },
 
     renderCall(args, theme) {
@@ -287,9 +354,11 @@ export default function fileSearchTools(pi: ExtensionAPI) {
     parameters: rgParameters(),
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const startedAt = Date.now();
+      const args = buildRgArgs(params);
       const exit = await Effect.runPromiseExit(
         Effect.gen(function* () {
-          const outcome = yield* runSearch("rg", buildRgArgs(params), ctx);
+          const outcome = yield* runSearch("rg", args, ctx);
           if (outcome.noMatches) {
             return {
               content: [{ type: "text", text: "No matches found" }],
@@ -314,7 +383,7 @@ export default function fileSearchTools(pi: ExtensionAPI) {
         }),
         signal ? { signal } : undefined,
       );
-      return unwrapToolExit(exit, "rg");
+      return unwrapAndLog(pi, "rg", args, ctx.cwd, startedAt, exit);
     },
 
     renderCall(args, theme) {

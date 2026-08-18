@@ -75,6 +75,8 @@ import {
   validateExplicitModel,
 } from "./src/registry-snapshot.ts";
 import { CHILD_FILE_CHANNEL } from "../shared/dashboard-state.ts";
+import { COMMAND_CHANNEL } from "../shared/command-log.ts";
+import type { ChildCommand } from "./src/domain.ts";
 import { buildModelChoices } from "../shared/model-choices.ts";
 import { formatContextUtilization } from "./src/format.ts";
 import { formatActivityStatus } from "../shared/activity-status.ts";
@@ -490,6 +492,12 @@ export default function (pi: ExtensionAPI) {
                 cwd,
                 origin: { kind: "subagent", id: title, name: title },
               }),
+            onCommandRun: (command: ChildCommand) =>
+              pi.events.emit(COMMAND_CHANNEL, {
+                ...command,
+                cwd,
+                origin: { kind: "subagent", id: title, name: title },
+              }),
           },
         }),
         { signal, interruptMessage: "Subagent spawn aborted." },
@@ -869,6 +877,12 @@ export default function (pi: ExtensionAPI) {
             onFileTouched: (path: string) =>
               pi.events.emit(CHILD_FILE_CHANNEL, {
                 path,
+                cwd: ctx.cwd,
+                origin: { kind: "subagent", id: btwTitle, name: btwTitle },
+              }),
+            onCommandRun: (command: ChildCommand) =>
+              pi.events.emit(COMMAND_CHANNEL, {
+                ...command,
                 cwd: ctx.cwd,
                 origin: { kind: "subagent", id: btwTitle, name: btwTitle },
               }),

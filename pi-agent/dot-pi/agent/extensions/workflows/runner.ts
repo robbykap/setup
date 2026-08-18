@@ -33,6 +33,12 @@ import {
 } from "../shared/child-session.ts";
 import { copyRegisteredProviders } from "../shared/child-providers.ts";
 import { createToolCallTimeoutGuard } from "../shared/tool-call-timeout.ts";
+import type { CommandTool } from "../shared/command-log.ts";
+import {
+  describeToolCommand,
+  isCommandTool,
+  toolResultText,
+} from "../shared/command-log.ts";
 import { emptyUsage, type AgentUsage, type TranscriptEntry } from "./model.ts";
 import {
   buildWorkflowAgentPrompt,
@@ -96,6 +102,8 @@ export interface RunAgentOptions {
   onProgress?: (progress: AgentProgress) => void;
   /** Report a file the child touched, so the parent can list it. */
   onFileTouched?: (path: string) => void;
+  /** Report a shell command the child ran, for the parent's command log. */
+  onCommandRun?: (command: ChildCommandReport) => void;
   /** Test-only override for the per-tool execution timeout. */
   toolCallTimeoutMs?: number;
   /** Test-only override for the first assistant response-event timeout. */
@@ -240,6 +248,41 @@ export function recordToolExecutionTiming(
     ...previous,
     finishedAt: observedAt,
     ...(durationMs === undefined ? {} : { durationMs }),
+  });
+}
+
+/** A shell command a workflow child ran. */
+export interface ChildCommandReport {
+  readonly tool: CommandTool;
+  readonly command: string;
+  readonly status: "ok" | "failed";
+  readonly output: string;
+}
+
+/** Announce a command this child ran — failures included, because a failed
+ * command is the one worth finding again. Named at the start event, where the
+ * arguments are, and reported at the matching end event. */
+function reportCommand(
+  event: ToolTimingEvent,
+  commandByToolCallId: Map<string, { tool: CommandTool; command: string }>,
+  onCommandRun: ((command: ChildCommandReport) => void) | undefined,
+) {
+  if (event.type === "tool_execution_start") {
+    if (!isCommandTool(event.toolName)) return;
+    commandByToolCallId.set(event.toolCallId, {
+      tool: event.toolName,
+      command: describeToolCommand(event.toolName, event.args),
+    });
+    return;
+  }
+  const ran = commandByToolCallId.get(event.toolCallId);
+  commandByToolCallId.delete(event.toolCallId);
+  if (!ran) return;
+  onCommandRun?.({
+    tool: ran.tool,
+    command: ran.command,
+    status: event.isError ? "failed" : "ok",
+    output: toolResultText(event.result),
   });
 }
 
@@ -514,6 +557,10 @@ export async function runAgent(
   let errorMessage: string | undefined;
   const toolTimings = new Map<string, ToolExecutionTiming>();
   const touchedByToolCallId = new Map<string, string>();
+  const commandByToolCallId = new Map<
+    string,
+    { tool: CommandTool; command: string }
+  >();
 
   const sync = () => {
     const messages = childSession.messages;
@@ -571,6 +618,7 @@ export async function runAgent(
     ) {
       recordToolExecutionTiming(toolTimings, event);
       reportTouchedFile(event, touchedByToolCallId, options.onFileTouched);
+      reportCommand(event, commandByToolCallId, options.onCommandRun);
     } else if (
       event.type !== "message_end" &&
       event.type !== "compaction_end"

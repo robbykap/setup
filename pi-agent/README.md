@@ -39,6 +39,7 @@ tool names — pi refuses to load both.
 | `background-terminals` | Long-lived shell commands with a `/ps` view                 |
 | `subagents`            | Background subagents with intent-based model routing        |
 | `file-edits`           | Collapsed edit rows, a file picker, and a diff viewer       |
+| `commands`             | Collapsed bash rows, a command picker, and an output viewer  |
 | `ask-user`             | Lets the model ask multiple-choice questions                |
 | `git-info`             | Branch and changed-file status in the bottom bar            |
 | `model-info`           | Model, context use, and cost in the bottom bar              |
@@ -70,8 +71,9 @@ red at 10%). Ghostty is on Catppuccin Mocha too
 
 ## Status bar
 
-Extension statuses (`file-edits`, `subagents`, `background-terminals`,
-`workflows`, `summaries`) share one line directly above the prompt, joined
+Extension statuses (`file-edits`, `commands`, `subagents`,
+`background-terminals`, `workflows`, `summaries`) share one line directly above
+the prompt, joined
 with the same `◆` separator the footer uses. Segments have a fixed order and
 drop from the right when the line will not fit. Extensions publish through
 `ctx.ui.setStatus`; `ui-customization` renders the line.
@@ -84,6 +86,24 @@ because `ctrl+f` is pi's built-in forward-char binding and `ctrl+shift+f` is
 also already bound; `/files` opens the same picker if you'd rather skip the
 shortcut. `file-edits` has no `effect` dependency; install it the
 same way as the other extensions, per [Install](#install) above.
+
+`commands` does the same for shell work. Every `bash` call collapses to two
+lines — the command, its outcome, and a peek at the LAST line it printed, since
+for a command the tail is the result. `alt+c` (or `/cmds`) opens the picker;
+Enter opens the output viewer, `n`/`p` move between commands, `j`/`k` and
+pgup/pgdn scroll. Failures and `ctrl+o`-expanded rows are never collapsed —
+that output is exactly what you want to see.
+
+The history covers `bash`, `fd` and `rg`, including the ones subagents and
+workflow children run (tagged with who ran them). Producers announce on
+`shared/command-log.ts`'s `COMMAND_CHANNEL`; `commands` owns the store and the
+UI, so no extension has to know it exists. Background terminals stay in `/ps`:
+duplicating them would mean two places to kill the same process.
+
+The viewer can show more than the transcript ever did. When bash truncates
+output it spills the full run to a temp file, and the viewer reads that back on
+open (capped at the last 2 MB); `f` toggles between the full log and what the
+model actually saw.
 
 ## Model configuration
 

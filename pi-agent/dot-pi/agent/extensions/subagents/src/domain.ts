@@ -8,6 +8,16 @@
 
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { Data } from "effect";
+import type { CommandTool } from "../../shared/command-log.ts";
+
+/** A shell command a child session ran, as the parent needs to list it. The
+ * output is the preview the child's tool event carried: no second capture. */
+export interface ChildCommand {
+  readonly tool: CommandTool;
+  readonly command: string;
+  readonly status: "ok" | "failed";
+  readonly output: string;
+}
 
 export const BACKEND_NAMES = ["pi"] as const;
 /**
@@ -49,6 +59,8 @@ export interface ParentContext {
   /** Report a file the child touched, so the parent can list it. Optional:
    * the backend must work without a parent that cares. */
   readonly onFileTouched?: (path: string) => void;
+  /** Report a shell command the child ran, for the parent's command log. */
+  readonly onCommandRun?: (command: ChildCommand) => void;
 }
 
 export interface SpawnTask {
