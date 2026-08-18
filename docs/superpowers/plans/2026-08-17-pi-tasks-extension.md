@@ -3541,3 +3541,56 @@ Checked against `docs/superpowers/specs/2026-08-17-pi-tasks-extension-design.md`
 - One clarification: the spec says user `!` commands follow the same lifecycle
   as foreground tasks. There is no "user bash finished" event, so Task 6
   captures them by wrapping the `BashOperations` Pi uses to execute them.
+
+---
+
+## Implementation Corrections
+
+Recorded after executing this plan. The code blocks above contain three
+mistakes; the committed implementation differs as follows.
+
+**1. No TypeScript parameter properties (Tasks 8 and 9).**
+`constructor(private tui: TUI, ...)` fails at load time with
+`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`: Node strips types without transforming, and
+Pi loads extensions the same way. Both `TaskDashboard` and `TaskDetail` declare
+their fields explicitly and assign them in the constructor body.
+
+**2. Width assertions must measure visible width (Tasks 8 and 9).**
+`truncateToWidth` inserts ANSI reset sequences when it truncates, so a correctly
+truncated 40-column line has a `String.length` of 48. The tests use
+`visibleWidth(line)` from `@earendil-works/pi-tui`.
+
+**3. The tree-kill test did not reach the escalation path (Task 5).**
+`sh -c 'trap "" TERM; sleep 30'` dies on SIGTERM anyway, because the trapping
+shell's `sleep` child does not ignore the signal. The suite adds a separate test
+using `trap "" TERM; echo trapped; while :; do sleep 0.2; done`, which waits for
+the `trapped` marker before killing — a SIGTERM sent before the trap is
+installed would kill the process outright and never exercise SIGKILL.
+
+## Verification Record
+
+Automated: 85 tests pass across 8 files; `tsc --noEmit` clean.
+
+Verified against real Pi 0.84.2 in print mode (`pi -e ./extensions/tasks/index.ts`):
+
+- The extension loads with no errors.
+- `bg_start`, `bg_list`, `bg_status` work end to end, including output capture
+  and exit codes.
+- `bg_kill` terminates the process group and leaves no orphans.
+- `bash` tool event payloads match `observe.ts`'s assumptions: `toolName` is
+  `"bash"`, `args.command` is the command string, and `tool_execution_update`
+  carries the **full accumulated output** each time, confirming that updates
+  must replace rather than append. The first update carries an empty `content`
+  array and is correctly ignored.
+- The settle notification path runs to completion (`settled → flush → deliver`,
+  `sendMessage` returns without throwing). Print mode exits before a queued
+  follow-up is surfaced, so the agent-visible half of this path is confirmed
+  only up to the `sendMessage` call.
+
+Not yet verified — requires an interactive TUI session:
+
+- The widget above the editor, both overlays, and every key binding.
+- `s` (send to agent) and `y` (yank) end to end.
+- `user_bash` capture: whether Pi honours the returned `operations` wrapper for
+  `!commands`.
+- Killing background tasks on `/new` and session shutdown.
