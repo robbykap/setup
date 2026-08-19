@@ -17,6 +17,16 @@ import { pairRows, type SplitRow } from "../diff.ts";
 import type { DiffLine, FileChange } from "../domain.ts";
 import { diffAgainstHead } from "../git-diff.ts";
 import { iconFor, paintIcon } from "../../../shared/tui-kit/icons.ts";
+import {
+  highlightBlock,
+  languageForPath,
+} from "../../../shared/tui-kit/highlight.ts";
+import {
+  DIFF_ADDED_BG,
+  DIFF_REMOVED_BG,
+  fillLine,
+  rgbBgOpener,
+} from "../../../shared/tui-kit/paint.ts";
 import { wordSpans } from "../intraline.ts";
 import type { FileEditStore } from "../store.ts";
 import {
@@ -81,6 +91,37 @@ function marker(kind: DiffLine["kind"]) {
   if (kind === "add") return "+";
   if (kind === "remove") return "−";
   return " ";
+}
+
+/** The background a line sits on: none for context, a tint for a change. */
+function tintOpener(kind: DiffLine["kind"]): string {
+  if (kind === "add") return rgbBgOpener(DIFF_ADDED_BG);
+  if (kind === "remove") return rgbBgOpener(DIFF_REMOVED_BG);
+  return "";
+}
+
+/** One highlight pass per hunk, zipped back line-for-line. The WeakMap keys
+ * on the FileChange object: resolveHunks replaces the object, so a new diff
+ * naturally re-highlights and a scroll never does. */
+const highlightCache = new WeakMap<FileChange, Map<DiffLine, string>>();
+
+export function highlightForChange(
+  change: FileChange,
+  path: string,
+): Map<DiffLine, string> {
+  const cached = highlightCache.get(change);
+  if (cached) return cached;
+  const language = languageForPath(path);
+  const map = new Map<DiffLine, string>();
+  for (const hunk of change.hunks) {
+    const lines = highlightBlock(
+      hunk.lines.map((line) => line.text).join("\n"),
+      language,
+    );
+    hunk.lines.forEach((line, i) => map.set(line, lines[i] ?? line.text));
+  }
+  highlightCache.set(change, map);
+  return map;
 }
 
 export class DiffViewer implements Component {
@@ -172,12 +213,27 @@ export class DiffViewer implements Component {
     }
   }
 
-  /** Paint a line, inverting the words that differ from its counterpart. */
-  private paint(line: DiffLine, counterpart: string | undefined): string {
+  /**
+   * The code half of a line: syntax-highlighted, or — when the line has a
+   * counterpart — painted flat with the words that differ inverted.
+   */
+  private paint(
+    line: DiffLine,
+    counterpart: string | undefined,
+    highlighted: string,
+  ): string {
     const color = lineColor(line.kind);
     if (counterpart === undefined || line.kind === "context") {
-      return this.theme.fg(color, line.text);
+      // highlightBlock hands back the input unchanged when the language is
+      // unknown or the theme has no colours; fall back to a flat diff colour
+      // rather than emitting an uncoloured row.
+      return highlighted === line.text
+        ? this.theme.fg(color, line.text)
+        : highlighted;
     }
+    // Syntax highlighting is intentionally skipped on these lines: the word
+    // spans are offsets into the raw text, and they cannot be mapped onto an
+    // already-ANSI-coloured string.
     const spans =
       line.kind === "remove"
         ? wordSpans(line.text, counterpart).removed
@@ -191,6 +247,31 @@ export class DiffViewer implements Component {
       .join("");
   }
 
+  /**
+   * One code cell: the gutter prefix, then the code laid over the line's tint
+   * for exactly the cells the prefix left over. Context lines pass an empty
+   * opener, so fillLine degrades to plain padding. Either way the cell is
+   * exactly `width` visible cells.
+   */
+  private cell(
+    line: DiffLine,
+    prefix: string,
+    counterpart: string | undefined,
+    highlights: Map<DiffLine, string>,
+    width: number,
+  ): string {
+    const body = this.paint(
+      line,
+      counterpart,
+      highlights.get(line) ?? line.text,
+    );
+    const remaining = Math.max(0, width - visibleWidth(prefix));
+    return truncateToWidth(
+      prefix + fillLine(body, remaining, tintOpener(line.kind)),
+      width,
+    );
+  }
+
   private stackedLines(change: FileChange, width: number): string[] {
     const lines: string[] = [];
     const counterparts = new Map<DiffLine, string>();
@@ -199,18 +280,17 @@ export class DiffViewer implements Component {
       counterparts.set(row.left, row.right.text);
       counterparts.set(row.right, row.left.text);
     }
+    const highlights = highlightForChange(change, this.path);
     change.hunks.forEach((hunk, index) => {
       if (index > 0) lines.push(this.theme.fg("dim", "─".repeat(width)));
       for (const line of hunk.lines) {
         const number = line.newLine ?? line.oldLine ?? 0;
+        const prefix =
+          this.theme.fg("dim", String(number).padStart(4)) +
+          " " +
+          this.theme.fg(lineColor(line.kind), `${marker(line.kind)} `);
         lines.push(
-          truncateToWidth(
-            this.theme.fg("dim", String(number).padStart(4)) +
-              " " +
-              this.theme.fg(lineColor(line.kind), `${marker(line.kind)} `) +
-              this.paint(line, counterparts.get(line)),
-            width,
-          ),
+          this.cell(line, prefix, counterparts.get(line), highlights, width),
         );
       }
     });
@@ -219,15 +299,17 @@ export class DiffViewer implements Component {
 
   private splitLines(change: FileChange, width: number): string[] {
     const pane = Math.floor((width - 1) / 2);
+    const highlights = highlightForChange(change, this.path);
     const cell = (line: DiffLine | undefined, counterpart: string | undefined) => {
       if (!line) return " ".repeat(pane);
-      const body = truncateToWidth(
-        this.theme.fg("dim", String(line.newLine ?? line.oldLine ?? 0).padStart(4)) +
-          " " +
-          this.paint(line, counterpart),
-        pane,
-      );
-      return body + " ".repeat(Math.max(0, pane - visibleWidth(body)));
+      const prefix =
+        this.theme.fg(
+          "dim",
+          String(line.newLine ?? line.oldLine ?? 0).padStart(4),
+        ) + " ";
+      // The fill runs to the end of the pane, so each side's tint reads as a
+      // full-height column rather than a ragged one.
+      return this.cell(line, prefix, counterpart, highlights, pane);
     };
 
     return pairRows(change.hunks).map((row: SplitRow) =>
