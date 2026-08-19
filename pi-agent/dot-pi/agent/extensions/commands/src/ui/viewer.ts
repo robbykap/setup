@@ -27,8 +27,57 @@ import {
 import { readFullOutput, type FullOutput } from "../full-output.ts";
 import { createOutputLineCache, oneLine, sanitizeText } from "../output.ts";
 import type { CommandStore } from "../store.ts";
+import { sectionRule } from "../../../shared/tui-kit/frame.ts";
+import { copyText } from "../../../shared/tui-kit/copy.ts";
+import {
+  applyBottomAnchored,
+  clampOffset,
+  scrollActionFor,
+} from "../../../shared/tui-kit/scroll.ts";
 
-const SCROLL_STEP = 6;
+/** How much of the command the top rule's label can carry before the rule
+ * itself would be all label. */
+const RULE_LABEL_WIDTH = 40;
+
+/**
+ * The scrollable half of the view, as one block: the command under its own
+ * rule, the output under a second, and the result on a third. Built whole so
+ * one bottom-anchored window can scroll all of it — the command scrolls out of
+ * the way of a long log, and `g` brings it back.
+ *
+ * `outputLines` arrive already wrapped to `width` by the caller's line cache;
+ * everything else is truncated here, so every line is at most `width` cells.
+ */
+export function buildBody(
+  record: CommandRecord,
+  outputLines: ReadonlyArray<string>,
+  theme: Theme,
+  width: number,
+): string[] {
+  const label = oneLine(record.command).slice(0, RULE_LABEL_WIDTH);
+  const lines = [sectionRule(theme, width, `$ ${label}`)];
+
+  // The command gets its own lines, all of them: a script pasted into bash is
+  // the thing you came here to read, and folding or clamping it would hide it.
+  sanitizeText(record.command)
+    .split("\n")
+    .forEach((line, index) => {
+      const prefix = index === 0 ? theme.fg("dim", "$ ") : "  ";
+      lines.push(truncateToWidth(prefix + theme.fg("text", line), width));
+    });
+
+  lines.push(sectionRule(theme, width, "output", "muted"));
+  for (const line of outputLines) lines.push(truncateToWidth(line, width));
+  lines.push(
+    sectionRule(
+      theme,
+      width,
+      `${formatStatus(record)} · ${formatDuration(record.durationMs)}`,
+      statusColor(record),
+    ),
+  );
+  return lines;
+}
 
 /** Session-scoped preferences, so a choice made once survives the next open. */
 export interface ViewerState {
@@ -59,7 +108,7 @@ export function stepId(
   return ids[next] ?? null;
 }
 
-class CommandViewer implements Component {
+export class CommandViewer implements Component {
   private tui: TUI;
   private theme: Theme;
   private keybindings: KeybindingsManager;
@@ -73,8 +122,12 @@ class CommandViewer implements Component {
   private scrollOffset = 0;
   private lineCache = createOutputLineCache();
   private fullOutput: FullOutput | undefined;
+  private copyNote: string | undefined;
   private closed = false;
   private unsubscribe: () => void;
+  /** The clipboard itself, injectable so a test can press `y` without one.
+   * Package-internal: nothing outside this extension sets it. */
+  copier?: (text: string) => Promise<void> | void;
 
   constructor(
     tui: TUI,
@@ -134,6 +187,10 @@ class CommandViewer implements Component {
   }
 
   handleInput(data: string): void {
+    // The receipt belongs to the copy that produced it: any keypress at all
+    // clears it, handled or not. The pending copy's .then still overwrites
+    // this, which is what makes a slow copier's note land rather than vanish.
+    this.copyNote = undefined;
     if (
       this.keybindings.matches(data, "tui.select.cancel") ||
       this.keybindings.matches(data, "app.interrupt")
@@ -153,44 +210,49 @@ class CommandViewer implements Component {
       this.tui.requestRender();
       return;
     }
-    if (this.keybindings.matches(data, "tui.editor.cursorUp") || data === "k") {
-      this.scrollOffset += SCROLL_STEP;
-      this.tui.requestRender();
+    if (data === "y" || data === "Y") {
+      const record = this.record();
+      if (!record) return;
+      const text = data === "y" ? record.command : this.body(record, this.theme).text;
+      this.copy(text, data === "y" ? "command" : "output");
       return;
     }
-    if (
-      this.keybindings.matches(data, "tui.editor.cursorDown") ||
-      data === "j"
-    ) {
-      this.scrollOffset = Math.max(0, this.scrollOffset - SCROLL_STEP);
-      this.tui.requestRender();
-      return;
-    }
-    if (this.keybindings.matches(data, "tui.editor.pageUp")) {
-      this.scrollOffset += this.viewportHeight();
-      this.tui.requestRender();
-      return;
-    }
-    if (this.keybindings.matches(data, "tui.editor.pageDown")) {
-      this.scrollOffset = Math.max(0, this.scrollOffset - this.viewportHeight());
-      this.tui.requestRender();
-      return;
-    }
-    if (data === "g") {
-      this.scrollOffset = Number.MAX_SAFE_INTEGER; // clamped in render
-      this.tui.requestRender();
-      return;
-    }
-    if (data === "G") {
-      this.scrollOffset = 0;
+    const action = scrollActionFor(data, this.keybindings, { vimKeys: true });
+    if (action) {
+      this.scrollOffset = applyBottomAnchored(
+        this.scrollOffset,
+        action,
+        this.viewportHeight(),
+      );
       this.tui.requestRender();
     }
   }
 
+  private copy(text: string, label: string) {
+    if (text.length === 0) {
+      // An empty clipboard reads as a failed copy; say which it was.
+      this.copyNote = "nothing to copy";
+      this.tui.requestRender();
+      return;
+    }
+    void copyText(text, label, this.copier)
+      .then((note) => {
+        // A copy can outlive the viewer: the note has nowhere to land, and
+        // rendering a disposed component is worse than dropping it.
+        if (this.closed) return;
+        this.copyNote = note;
+        this.tui.requestRender();
+      })
+      // copyText never throws, but the render above can; the no-throw
+      // guarantee ends at its boundary (tui-kit/copy.ts).
+      .catch(() => {});
+  }
+
   private viewportHeight(): number {
     const rows = this.tui.terminal.rows || 30;
-    // viewport + 8 chrome rows keeps the overlay at terminal rows - 1.
-    return Math.max(6, rows - 9);
+    // viewport + 6 chrome rows (three borders, the header, the legend) keeps
+    // the overlay at terminal rows - 1.
+    return Math.max(6, rows - 7);
   }
 
   render(width: number): string[] {
@@ -215,40 +277,41 @@ class CommandViewer implements Component {
       (origin ? theme.fg("accent", ` · ${oneLine(origin)}`) : "") +
       theme.fg("dim", ` · ${record.cwd}`);
     lines.push(truncateToWidth(header, width));
-
-    // The command gets its own lines: a script pasted into bash is the thing
-    // you came here to read, and folding it to one line would hide it.
-    const commandLines = sanitizeText(record.command).split("\n").slice(0, 3);
-    for (const line of commandLines) {
-      lines.push(
-        truncateToWidth(theme.fg("dim", "$ ") + theme.fg("text", line), width),
-      );
-    }
     lines.push(border);
 
     const { text, note } = this.body(record, theme);
-    const output = this.lineCache.get(
-      text,
-      `${record.id}:${this.showingFull() ? "full" : "tool"}`,
-      width - 2,
-    );
+    const output =
+      text.length === 0
+        ? [theme.fg("dim", "(no output)")]
+        : this.lineCache.get(
+            text,
+            `${record.id}:${this.showingFull() ? "full" : "tool"}`,
+            width - 2,
+          );
 
     const viewport = this.viewportHeight();
     const body: string[] = [];
+    // The note explains which text the block below is, so it stays put while
+    // that text scrolls under it.
     if (note) body.push(truncateToWidth(note, width));
 
+    const block = buildBody(record, output, theme, width - 2);
     const scrollRows = this.scrollOffset > 0 ? 1 : 0;
     const capacity = Math.max(1, viewport - body.length - scrollRows);
-    const maxOffset = Math.max(0, output.length - capacity);
-    if (this.scrollOffset > maxOffset) this.scrollOffset = maxOffset;
+    // The kit asks callers to clamp on store, which we cannot: the maximum
+    // offset depends on the block's height, and that is only known here.
+    // Clamping here is equivalent because the assignment writes the clamped
+    // value back into this.scrollOffset, and render() always follows the
+    // requestRender that handleInput issued — so `g`'s sentinel is replaced by
+    // a real offset before the next keypress reads it, and `j` after `g` moves
+    // one line down from the top rather than out of a number nothing can walk
+    // back from.
+    const maxOffset = Math.max(0, block.length - capacity);
+    this.scrollOffset = clampOffset(this.scrollOffset, maxOffset);
 
-    const end = output.length - this.scrollOffset;
-    const visible = output.slice(Math.max(0, end - capacity), end);
-    if (visible.length === 0) {
-      body.push(theme.fg("dim", "  (no output)"));
-    } else {
-      for (const line of visible) body.push(truncateToWidth(`  ${line}`, width));
-    }
+    const end = block.length - this.scrollOffset;
+    const visible = block.slice(Math.max(0, end - capacity), end);
+    for (const line of visible) body.push(truncateToWidth(`  ${line}`, width));
     if (this.scrollOffset > 0) {
       body.push(
         truncateToWidth(
@@ -265,7 +328,9 @@ class CommandViewer implements Component {
       truncateToWidth(
         theme.fg(
           "dim",
-          `${configuredKeys(this.keybindings, "tui.select.cancel")} back · n/p prev/next · ${record.fullOutputPath ? "f full/truncated · " : ""}${configuredKeys(this.keybindings, "tui.editor.cursorUp")}/${configuredKeys(this.keybindings, "tui.editor.cursorDown")}/jk scroll · g/G top/bottom`,
+          // Short enough to fit an 80-column terminal, so the close key — the
+          // way out — is never the part that falls off the end.
+          `${configuredKeys(this.keybindings, "tui.select.cancel")} back · n/p prev/next · ${record.fullOutputPath ? "f full · " : ""}j/k ^d/^u g/G scroll · y/Y copy${this.copyNote ? ` · ${this.copyNote}` : ""}`,
         ),
         width,
       ),
