@@ -41,8 +41,10 @@ const BG_COLORS = [
 const fill = (names: string[], hex: string) =>
   Object.fromEntries(names.map((name) => [name, hex]));
 
+// `muted` gets its own hex so a test can tell one labelColor from another;
+// with a single fill colour every theme.fg() call would emit the same bytes.
 const theme = new Theme(
-  fill(FG_COLORS, "#cba6f7") as never,
+  { ...fill(FG_COLORS, "#cba6f7"), muted: "#6c7086" } as never,
   fill(BG_COLORS, "#1e1e2e") as never,
   "truecolor",
 );
@@ -81,10 +83,28 @@ test("a label longer than the border cannot overflow it", () => {
 });
 
 test("sectionRule is exactly width cells, label truncated", () => {
-  const rule = sectionRule(theme, 20, "a very long label that cannot fit");
+  const long = "a very long label that cannot fit";
+  const rule = sectionRule(theme, 20, long);
   assert.equal(visibleWidth(rule), 20);
   const bare = sectionRule(theme, 20);
   assert.equal(visibleWidth(bare), 20);
+
+  // A label that fits is set into the rule verbatim.
+  assert.ok(sectionRule(theme, 40, "stdout").includes("stdout"));
+
+  // A label that does not fit keeps its head and loses its tail.
+  assert.ok(rule.includes("a very"));
+  assert.ok(!rule.includes(long));
+
+  // Exact fit: width - 4 visible label cells plus the two spaces and the two
+  // lead cells is precisely `width`, with no dashes left over.
+  assert.equal(visibleWidth(sectionRule(theme, 20, "x".repeat(16))), 20);
+
+  // labelColor actually reaches the label.
+  assert.notEqual(
+    sectionRule(theme, 30, "x", "muted"),
+    sectionRule(theme, 30, "x"),
+  );
 });
 
 test("the body leaves exactly one row for pi's footer", () => {

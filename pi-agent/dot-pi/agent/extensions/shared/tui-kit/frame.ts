@@ -4,8 +4,11 @@
  * shattered, because the terminal has no way to know the row was meant to be
  * padded.
  *
- * These are the same two primitives background-terminals/src/ui/ps.ts uses,
- * lifted into one place so the picker and the viewer cannot drift apart.
+ * Lifted out of file-edits so the pickers and viewers in every extension share
+ * one geometry. background-terminals/src/ui/ps.ts still carries its own private
+ * copy of pad/borderSegment; it should move here too. Extensions reach in by
+ * relative path — the older copy-don't-import rule for independent
+ * installability no longer applies now that the extensions ship together.
  * Widths are measured with visibleWidth, never String.length: every one of
  * these strings carries ANSI colour escapes.
  */
@@ -102,6 +105,8 @@ export function bodyHeight(terminalRows: number, chromeLines: number): number {
  * A labeled rule *inside* a panel body, separating sections of one view —
  * a command from its output, a transcript block from the next. Dashed, so it
  * reads as an interior seam rather than a panel edge. Exactly `width` cells.
+ * The rule deliberately starts with two cells of lead ("╌╌") where
+ * borderSegment uses one, so the seam sits inboard of the panel wall.
  */
 export function sectionRule(
   theme: Theme,
