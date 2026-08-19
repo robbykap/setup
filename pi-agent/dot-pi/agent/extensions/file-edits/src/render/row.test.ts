@@ -1,18 +1,53 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { Theme } from "@earendil-works/pi-coding-agent";
 import { Container, visibleWidth } from "@earendil-works/pi-tui";
 import {
   CollapsedRow,
   EmptyRow,
+  NoteRow,
   delegationContext,
   renderCollapsedRow,
+  renderNote,
 } from "./row.ts";
 import { parseUnifiedPatch } from "../diff.ts";
+import { failedChange } from "../failure.ts";
 
 const theme = {
   fg: (_color: string, text: string) => text,
   bold: (text: string) => text,
 } as never;
+
+/**
+ * A REAL Theme for the one invariant that is about escapes rather than text:
+ * the stub above returns its input, so it could never emit a background fill
+ * whether or not the row asked for one. Built the way geometry.test.ts does,
+ * since the live singleton is not exported.
+ */
+const FG_COLORS = [
+  "accent", "border", "borderAccent", "borderMuted", "success", "error",
+  "warning", "muted", "dim", "text", "thinkingText", "searchMatchText",
+  "userMessageText", "customMessageText", "customMessageLabel", "toolTitle",
+  "toolOutput", "mdHeading", "mdLink", "mdLinkUrl", "mdCode", "mdCodeBlock",
+  "mdCodeBlockBorder", "mdQuote", "mdQuoteBorder", "mdHr", "mdListBullet",
+  "toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "syntaxComment",
+  "syntaxKeyword", "syntaxFunction", "syntaxVariable", "syntaxString",
+  "syntaxNumber", "syntaxType", "syntaxOperator", "syntaxPunctuation",
+  "thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium",
+  "thinkingHigh", "thinkingXhigh", "thinkingMax", "bashMode",
+];
+const BG_COLORS = [
+  "selectedBg", "scrollbarThumb", "searchMatchBg", "userMessageBg",
+  "customMessageBg", "toolPendingBg", "toolSuccessBg", "toolErrorBg",
+];
+const fill = (names: string[], hex: string) =>
+  Object.fromEntries(names.map((name) => [name, hex]));
+
+const realTheme = new Theme(
+  fill(FG_COLORS, "#cba6f7") as never,
+  fill(BG_COLORS, "#1e1e2e") as never,
+  "truecolor",
+) as never;
 
 const parsed = parseUnifiedPatch(
   `@@ -37,3 +37,4 @@\n const ranked = rank(candidates)\n-return ranked[0]\n+const model = pickModel(ranked, effort)\n+if (!model) throw new NoModelError(effort)\n`,
@@ -84,6 +119,61 @@ test("the row component renders the row at the width it is given", () => {
   assert.deepEqual(row.render(40), renderCollapsedRow(change, 40, theme));
 });
 
+test("a failed call collapses to a header with a failure marker", () => {
+  const lines = renderCollapsedRow(failedChange("src/router.ts"), 80, theme, true);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0]!, /src\/router\.ts/);
+  assert.match(lines[0]!, /✗ failed/);
+});
+
+test("a failed row states no counts it does not have", () => {
+  // failedChange carries zeroes, but a row that ever fell back to the last
+  // known counts would claim the failed call had applied them.
+  const lines = renderCollapsedRow({ ...change, added: 12 }, 80, theme, true);
+  assert.doesNotMatch(lines[0]!, /\+12/);
+  assert.doesNotMatch(lines[0]!, /−4/);
+});
+
+test("a failed row is plain text: no background fill anywhere", () => {
+  // `\x1b[4` opens a background fill (48;…) or an underline: a failure is a
+  // plain row like every other, foreground colours only. This is the whole
+  // point of the row — the built-in draws a red box here.
+  const lines = [
+    ...renderCollapsedRow(failedChange("src/router.ts"), 80, realTheme, true),
+    ...renderNote("Could not edit file: src/router.ts.", 80, realTheme),
+  ];
+  assert.equal(lines.length, 2);
+  for (const line of lines) assert.ok(!line.includes("\x1b[4"), line);
+});
+
+test("the note is a one-line dim reason", () => {
+  const lines = renderNote("Could not edit\nfile: src/router.ts.", 80, theme);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0]!.trim(), "│ Could not edit file: src/router.ts.");
+});
+
+test("a note with nothing to say renders nothing", () => {
+  assert.deepEqual(renderNote("", 80, theme), []);
+  assert.deepEqual(renderNote("   \n ", 80, theme), []);
+  assert.deepEqual(new NoteRow().render(80), []);
+});
+
+test("the note fits the width", () => {
+  const note = new NoteRow();
+  note.update("a reason far longer than the terminal is wide".repeat(4), theme);
+  for (const line of note.render(30)) {
+    assert.ok(visibleWidth(line) <= 30, `too wide: ${JSON.stringify(line)}`);
+  }
+});
+
+test("the row component keeps the failed flag it was given", () => {
+  const row = new CollapsedRow();
+  row.update(failedChange("src/router.ts"), theme, true);
+  assert.match(row.render(80)[0]!, /✗ failed/);
+  row.update(change, theme);
+  assert.deepEqual(row.render(80), renderCollapsedRow(change, 80, theme));
+});
+
 test("delegation hides our components from a built-in renderer", () => {
   // edit.js:276-277 calls clear() on whatever the slot returned last time.
   assert.equal(
@@ -92,6 +182,10 @@ test("delegation hides our components from a built-in renderer", () => {
   );
   assert.equal(
     delegationContext({ lastComponent: new EmptyRow() }).lastComponent,
+    undefined,
+  );
+  assert.equal(
+    delegationContext({ lastComponent: new NoteRow() }).lastComponent,
     undefined,
   );
 });

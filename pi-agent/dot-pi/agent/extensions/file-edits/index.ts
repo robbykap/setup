@@ -12,6 +12,11 @@
  * summary line in renderResult. Overriding renderResult alone would make the
  * row longer, not shorter.
  *
+ * A settled collapsed call never reaches a built-in renderer, failed or not:
+ * a failure has no CallDelta to collapse (executeAndRecord records nothing
+ * when the tool throws), so its row is rebuilt from the arguments and the
+ * error text instead of falling back to the built-in's red box.
+ *
  * alt+e (or /files) opens the picker; Enter there opens the diff viewer,
  * which toggles between a unified and a side-by-side layout.
  */
@@ -27,6 +32,7 @@ import {
   createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { FileChange } from "./src/domain.ts";
+import { failedCallPath, failedChange, failureReason } from "./src/failure.ts";
 import { observeChildFiles } from "./src/observe.ts";
 import {
   createCallRecords,
@@ -38,6 +44,7 @@ import { createFileEditStore } from "./src/store.ts";
 import {
   CollapsedRow,
   EmptyRow,
+  NoteRow,
   delegationContext,
 } from "./src/render/row.ts";
 import { browseChangedFiles } from "./src/ui/picker.ts";
@@ -79,12 +86,21 @@ export default function (pi: ExtensionAPI) {
     lastComponent: unknown,
     change: FileChange,
     theme: Theme,
+    failed = false,
   ) => {
     const row =
       lastComponent instanceof CollapsedRow
         ? lastComponent
         : new CollapsedRow();
-    row.update(change, theme);
+    row.update(change, theme, failed);
+    return row;
+  };
+
+  /** The reason line under a failed header. renderCall cannot draw it: the
+   * error text only exists in the result slot. */
+  const noteRow = (lastComponent: unknown, text: string, theme: Theme) => {
+    const row = lastComponent instanceof NoteRow ? lastComponent : new NoteRow();
+    row.update(text, theme);
     return row;
   };
 
@@ -117,18 +133,44 @@ export default function (pi: ExtensionAPI) {
         // The built-in renders the full diff here (edit.js:229), so this is
         // the slot that has to collapse. Until the call has been recorded
         // there is nothing to collapse to: argument streaming stays built-in.
+        // A settled failure is never recorded, so its row is rebuilt from the
+        // path the arguments named — anything else is the built-in's red box.
         const change = calls.get(context.toolCallId);
-        if (!change || context.expanded) {
+        if (context.expanded) {
           return baseEdit.renderCall!(args, theme, delegationContext(context));
         }
-        return collapsedRow(context.lastComponent, change, theme);
+        if (change) return collapsedRow(context.lastComponent, change, theme);
+        const failed = context.isError
+          ? failedCallPath(args, context.cwd)
+          : undefined;
+        if (failed) {
+          return collapsedRow(
+            context.lastComponent,
+            failedChange(failed),
+            theme,
+            true,
+          );
+        }
+        return baseEdit.renderCall!(args, theme, delegationContext(context));
       },
       renderResult(result, options, theme, context) {
-        // A failure must never be collapsed: that is exactly the output the
-        // user needs. Same for the expanded view — ctrl+o still works.
+        // A failure collapses like everything else: renderCall drew the header
+        // and this slot adds the reason, in a dim line rather than a red box.
+        // ctrl+o — the expanded view — still gets the built-in, and so does a
+        // still-streaming result.
         const change = calls.get(context.toolCallId);
         const expanded = options.expanded || context.expanded;
-        if (context.isError || expanded || !change) {
+        const failed = context.isError
+          ? failedCallPath(context.args, context.cwd)
+          : undefined;
+        if (!expanded && !options.isPartial && failed) {
+          return noteRow(
+            context.lastComponent,
+            failureReason(result.content),
+            theme,
+          );
+        }
+        if (expanded || options.isPartial || !change) {
           return baseEdit.renderResult!(
             result,
             options,
@@ -168,15 +210,37 @@ export default function (pi: ExtensionAPI) {
       },
       renderCall(args, theme, context) {
         const change = calls.get(context.toolCallId);
-        if (!change || context.expanded) {
+        if (context.expanded) {
           return baseWrite.renderCall!(args, theme, delegationContext(context));
         }
-        return collapsedRow(context.lastComponent, change, theme);
+        if (change) return collapsedRow(context.lastComponent, change, theme);
+        const failed = context.isError
+          ? failedCallPath(args, context.cwd)
+          : undefined;
+        if (failed) {
+          return collapsedRow(
+            context.lastComponent,
+            failedChange(failed),
+            theme,
+            true,
+          );
+        }
+        return baseWrite.renderCall!(args, theme, delegationContext(context));
       },
       renderResult(result, options, theme, context) {
         const change = calls.get(context.toolCallId);
         const expanded = options.expanded || context.expanded;
-        if (context.isError || expanded || !change) {
+        const failed = context.isError
+          ? failedCallPath(context.args, context.cwd)
+          : undefined;
+        if (!expanded && !options.isPartial && failed) {
+          return noteRow(
+            context.lastComponent,
+            failureReason(result.content),
+            theme,
+          );
+        }
+        if (expanded || options.isPartial || !change) {
           return baseWrite.renderResult!(
             result,
             options,

@@ -1,6 +1,10 @@
 /**
  * The two-line collapsed row: what an edit looks like in the transcript when
  * you are not reading the diff. Header plus a peek at the largest hunk.
+ *
+ * A failed call collapses the same way — the path, a `✗ failed` marker where
+ * the counts would go, and the reason on the peek line — rather than falling
+ * back to the built-in's red box. ctrl+o still expands to the built-in.
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -16,6 +20,9 @@ import { iconFor, paintIcon } from "../../../shared/tui-kit/icons.ts";
 type Theme = ExtensionContext["ui"]["theme"];
 
 export const PEEK_LINES = 3;
+
+/** Where the counts would go on a call that applied nothing. */
+const FAILED_MARKER = "✗ failed";
 
 /** The directory tells you where; the basename tells you what. Only the
  * second one earns full contrast — the same split the footer uses. */
@@ -50,15 +57,36 @@ function counts(change: FileChange, theme: Theme) {
 export class CollapsedRow extends Container {
   private change: FileChange | undefined;
   private theme: Theme | undefined;
+  private failed = false;
 
-  update(change: FileChange, theme: Theme): void {
+  update(change: FileChange, theme: Theme, failed = false): void {
     this.change = change;
     this.theme = theme;
+    this.failed = failed;
   }
 
   override render(width: number): string[] {
     if (!this.change || !this.theme) return [];
-    return renderCollapsedRow(this.change, width, this.theme);
+    return renderCollapsedRow(this.change, width, this.theme, this.failed);
+  }
+}
+
+/** The result slot of a FAILED collapsed call: the reason, dimmed, on the
+ * line the hunk peek would have used. Only this slot has the error text
+ * (renderCall never sees the result), so the failed row is drawn across both
+ * slots — header there, reason here. */
+export class NoteRow extends Container {
+  private text = "";
+  private theme: Theme | undefined;
+
+  update(text: string, theme: Theme): void {
+    this.text = text;
+    this.theme = theme;
+  }
+
+  override render(width: number): string[] {
+    if (!this.theme) return [];
+    return renderNote(this.text, width, this.theme);
   }
 }
 
@@ -81,7 +109,8 @@ export function delegationContext<T extends { lastComponent: unknown }>(
 ): T {
   const ours =
     context.lastComponent instanceof CollapsedRow ||
-    context.lastComponent instanceof EmptyRow;
+    context.lastComponent instanceof EmptyRow ||
+    context.lastComponent instanceof NoteRow;
   return ours ? { ...context, lastComponent: undefined } : context;
 }
 
@@ -89,15 +118,20 @@ export function renderCollapsedRow(
   change: FileChange,
   width: number,
   theme: Theme,
+  failed = false,
 ): string[] {
   const left = `${paintIcon(iconFor(change.path))} ${paintPath(change.path, theme)}`;
-  const right = counts(change, theme);
+  const right = failed ? theme.fg("error", FAILED_MARKER) : counts(change, theme);
   const gap = Math.max(1, width - visibleWidth(left) - visibleWidth(right));
   const header = truncateToWidth(
     `${left}${" ".repeat(gap)}${right}`,
     width,
     theme.fg("dim", "…"),
   );
+
+  // Nothing was applied, so there is no diff to peek at: the reason comes
+  // from the result slot (NoteRow) instead.
+  if (failed) return [header];
 
   const hunk = largestHunk(change.hunks);
   if (!hunk) return [header];
@@ -110,12 +144,20 @@ export function renderCollapsedRow(
     .map((line) => line.text.trim())
     .join(theme.fg("dim", " · "));
 
-  return [
-    header,
-    truncateToWidth(
-      `   ${theme.fg("dim", "│")} ${theme.fg("dim", peek)}`,
-      width,
-      theme.fg("dim", "…"),
-    ),
-  ];
+  return [header, peekLine(peek, width, theme)];
+}
+
+/** The reason line under a failed header. Empty text renders no line at all:
+ * a bare `│` says less than nothing. */
+export function renderNote(text: string, width: number, theme: Theme): string[] {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line ? [peekLine(line, width, theme)] : [];
+}
+
+function peekLine(text: string, width: number, theme: Theme): string {
+  return truncateToWidth(
+    `   ${theme.fg("dim", "│")} ${theme.fg("dim", text)}`,
+    width,
+    theme.fg("dim", "…"),
+  );
 }
