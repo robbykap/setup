@@ -21,7 +21,7 @@ import {
   bottomBorder,
   outerLine,
   topBorder,
-} from "./frame.ts";
+} from "../../../shared/tui-kit/frame.ts";
 import {
   createPickerState,
   filterChanges,

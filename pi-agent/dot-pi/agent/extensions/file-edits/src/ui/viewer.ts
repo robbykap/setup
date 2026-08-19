@@ -25,7 +25,7 @@ import {
   bottomBorder,
   outerLine,
   topBorder,
-} from "./frame.ts";
+} from "../../../shared/tui-kit/frame.ts";
 import { siblingPath } from "./navigation.ts";
 
 function configuredKeys(

@@ -97,3 +97,25 @@ export function outerLine(width: number, content: string): string {
 export function bodyHeight(terminalRows: number, chromeLines: number): number {
   return Math.max(6, (terminalRows || 30) - chromeLines - 1);
 }
+
+/**
+ * A labeled rule *inside* a panel body, separating sections of one view —
+ * a command from its output, a transcript block from the next. Dashed, so it
+ * reads as an interior seam rather than a panel edge. Exactly `width` cells.
+ */
+export function sectionRule(
+  theme: Theme,
+  width: number,
+  label = "",
+  labelColor: Parameters<Theme["fg"]>[0] = "accent",
+): string {
+  const text = label
+    ? ` ${truncateToWidth(label, Math.max(0, width - 4))} `
+    : "";
+  const labelWidth = visibleWidth(text);
+  return (
+    theme.fg("border", "╌╌") +
+    (text ? theme.fg(labelColor, text) : "") +
+    theme.fg("border", "╌".repeat(Math.max(0, width - 2 - labelWidth)))
+  );
+}

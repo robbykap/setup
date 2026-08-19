@@ -14,11 +14,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Theme } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
-import { parseUnifiedPatch } from "../diff.ts";
-import { createFileEditStore, type FileEditStore } from "../store.ts";
-import { FilePicker } from "./picker.ts";
-import { DiffViewer } from "./viewer.ts";
-import { bodyHeight, bodyRow, pad, topBorder } from "./frame.ts";
+import { parseUnifiedPatch } from "../../file-edits/src/diff.ts";
+import {
+  createFileEditStore,
+  type FileEditStore,
+} from "../../file-edits/src/store.ts";
+import { FilePicker } from "../../file-edits/src/ui/picker.ts";
+import { DiffViewer } from "../../file-edits/src/ui/viewer.ts";
+import { bodyHeight, bodyRow, pad, sectionRule, topBorder } from "./frame.ts";
 
 /**
  * A REAL Theme, not a stub whose helpers return their input. The entire bug
@@ -126,6 +129,13 @@ test("borders and rows are exactly the requested width", () => {
 
 test("a label longer than the border cannot overflow it", () => {
   assert.equal(visibleWidth(topBorder(theme, 20, "x".repeat(80))), 20);
+});
+
+test("sectionRule is exactly width cells, label truncated", () => {
+  const rule = sectionRule(theme, 20, "a very long label that cannot fit");
+  assert.equal(visibleWidth(rule), 20);
+  const bare = sectionRule(theme, 20);
+  assert.equal(visibleWidth(bare), 20);
 });
 
 test("the body leaves exactly one row for pi's footer", () => {
