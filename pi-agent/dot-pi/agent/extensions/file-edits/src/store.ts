@@ -50,6 +50,14 @@ export function createFileEditStore(
 ): FileEditStore {
   const cap = options.cap ?? DEFAULT_CAP;
   const changes = new Map<string, FileChange>();
+  /**
+   * Paths a child session has touched. A child's diff is never captured, so
+   * once one has edited a file, the hunks any later local call reports cover
+   * only that call — the file as a whole can still only be described by git.
+   * Sticky, because resolving once does not make the next local edit complete
+   * either.
+   */
+  const touchedByChild = new Set<string>();
   const listeners = new Set<() => void>();
 
   const notify = () => {
@@ -70,6 +78,7 @@ export function createFileEditStore(
       }
       if (!oldestPath) return;
       changes.delete(oldestPath);
+      touchedByChild.delete(oldestPath);
     }
   };
 
@@ -85,7 +94,8 @@ export function createFileEditStore(
         isNew: previous?.isNew || input.isNew,
         updatedAt: input.at,
         origin: input.origin,
-        hunksPending: false,
+        // Our own hunks settle the file only when they are all of it.
+        hunksPending: touchedByChild.has(input.path),
       });
       evict();
       notify();
@@ -93,6 +103,7 @@ export function createFileEditStore(
 
     recordExternal(input) {
       const previous = changes.get(input.path);
+      touchedByChild.add(input.path);
       changes.set(input.path, {
         path: input.path,
         hunks: previous?.hunks ?? [],

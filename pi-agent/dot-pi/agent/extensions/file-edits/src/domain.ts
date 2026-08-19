@@ -40,8 +40,10 @@ export interface FileChange {
   readonly updatedAt: number;
   readonly origin: ChangeOrigin;
   /**
-   * True when hunks are not known yet: either the patch failed to parse, or
-   * this is a child-session edit whose diff is computed lazily against HEAD.
+   * True when the hunks are not the whole file's story yet: the patch failed
+   * to parse, a child session made the change and its diff is computed lazily
+   * against HEAD, or a local edit landed on a file a child had already
+   * touched, so what we hold describes one call and not the file.
    */
   readonly hunksPending: boolean;
 }

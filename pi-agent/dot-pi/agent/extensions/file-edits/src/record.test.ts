@@ -212,6 +212,148 @@ test("the delegated result is passed through untouched", async () => {
   });
 });
 
+test("a new file is in the store the moment the write returns", async () => {
+  // The picker and the status segment read the store, not the viewer: a file
+  // created this turn has to be listed before anything opens a diff.
+  const store = createFileEditStore();
+  const calls = createCallRecords();
+  let listed: ReadonlyArray<string> = [];
+  store.subscribe(() => {
+    listed = store.list().map((change) => change.path);
+  });
+  await executeAndRecord({
+    toolCallId: "call-1",
+    params: { path: "src/new.ts", content: "a\nb\nc" },
+    run: async () => ({ content: [], details: undefined }),
+    measure: measureWrite(CWD, () => false),
+    store,
+    calls,
+    at: 11,
+  });
+  const change = store.get("src/new.ts")!;
+  assert.equal(change.isNew, true);
+  assert.equal(change.added, 3);
+  assert.equal(change.edits, 1);
+  assert.deepEqual(store.totals(), { files: 1, added: 3, removed: 0 });
+  // The subscriber fired with the row already in place, which is what drives
+  // the status segment.
+  assert.deepEqual(listed, ["src/new.ts"]);
+});
+
+test("a write over an existing file lands settled but with no hunks", async () => {
+  // write reports no patch, so the store row is complete except for the diff;
+  // the viewer's needsHunkResolution picks exactly this shape up and fills it
+  // in from git HEAD.
+  const store = createFileEditStore();
+  const calls = createCallRecords();
+  await executeAndRecord({
+    toolCallId: "call-1",
+    params: { path: "src/old.ts", content: "a\nb" },
+    run: async () => ({ content: [], details: undefined }),
+    measure: measureWrite(CWD, () => true),
+    store,
+    calls,
+    at: 12,
+  });
+  const change = store.get("src/old.ts")!;
+  assert.equal(change.isNew, false);
+  assert.equal(change.added, 2);
+  assert.deepEqual(change.hunks, []);
+  assert.equal(change.hunksPending, false);
+  store.resolveHunks("src/old.ts", { hunks: [], added: 6, removed: 4 });
+  assert.equal(store.get("src/old.ts")!.added, 6);
+});
+
+test("an edit with no patch is still a listed file, not a dropped one", async () => {
+  const store = createFileEditStore();
+  const calls = createCallRecords();
+  await executeAndRecord({
+    toolCallId: "call-1",
+    params: { path: "src/a.ts" },
+    run: async () => ({ content: [], details: {} }),
+    measure: measureEdit(CWD),
+    store,
+    calls,
+    at: 13,
+  });
+  const change = store.get("src/a.ts")!;
+  assert.equal(change.edits, 1);
+  assert.equal(change.added, 0);
+  assert.equal(change.removed, 0);
+  assert.deepEqual(change.hunks, []);
+  assert.deepEqual(store.list().map((c) => c.path), ["src/a.ts"]);
+});
+
+test("a failure and its retry are one change, counted once", async () => {
+  // Only a successful call is listed (cecec22), and the retry must not inherit
+  // an edit count from the attempt that changed nothing.
+  const store = createFileEditStore();
+  const calls = createCallRecords();
+  const params = { path: "src/a.ts" };
+  await assert.rejects(
+    executeAndRecord({
+      toolCallId: "call-1",
+      params,
+      run: async () => {
+        throw new Error("String to replace not found in file.");
+      },
+      measure: measureEdit(CWD),
+      store,
+      calls,
+      at: 1,
+    }),
+  );
+  assert.equal(store.size(), 0);
+  await executeAndRecord({
+    toolCallId: "call-2",
+    params,
+    run: async () => editResult(2, 1),
+    measure: measureEdit(CWD),
+    store,
+    calls,
+    at: 2,
+  });
+  const change = store.get("src/a.ts")!;
+  assert.equal(change.edits, 1);
+  assert.equal(change.added, 2);
+  assert.equal(change.removed, 1);
+  assert.equal(change.updatedAt, 2);
+  assert.equal(calls.get("call-1"), undefined);
+  assert.equal(calls.get("call-2")!.added, 2);
+});
+
+test("a failed write leaves no row behind either", async () => {
+  const store = createFileEditStore();
+  const calls = createCallRecords();
+  await assert.rejects(
+    executeAndRecord({
+      toolCallId: "call-1",
+      params: { path: "src/new.ts", content: "a\nb" },
+      run: async () => {
+        throw new Error("EACCES: permission denied");
+      },
+      measure: measureWrite(CWD, () => false),
+      store,
+      calls,
+      at: 1,
+    }),
+  );
+  assert.equal(store.size(), 0);
+  await executeAndRecord({
+    toolCallId: "call-2",
+    params: { path: "src/new.ts", content: "a\nb" },
+    run: async () => ({ content: [], details: undefined }),
+    measure: measureWrite(CWD, () => false),
+    store,
+    calls,
+    at: 2,
+  });
+  const change = store.get("src/new.ts")!;
+  assert.equal(change.edits, 1);
+  assert.equal(change.added, 2);
+  assert.equal(change.isNew, true);
+});
+
 test("an edit's store key comes from storeKeyFor", async () => {
   const store = createFileEditStore();
   const calls = createCallRecords();

@@ -61,6 +61,22 @@ test("a relative path resolves against the child's cwd, not the parent's", () =>
   assert.ok(store.get("sub/b.ts"), `expected sub/b.ts, got ${store.list().map((c) => c.path).join(",")}`);
 });
 
+test("a relative path with no cwd falls back to the session's", () => {
+  // Older children (and workflows) announce a path without saying where they
+  // ran; the session cwd is the only anchor there is.
+  const store = createFileEditStore();
+  const events = bus();
+  observeChildFiles(events as never, store, "/repo");
+  events.emit("dashboard:child-file", {
+    path: "src/a.ts",
+    origin: { kind: "subagent", id: "sa-2", name: "sa-2" },
+  });
+  const change = store.get("src/a.ts");
+  assert.ok(change, `expected src/a.ts, got ${store.list().map((c) => c.path).join(",")}`);
+  assert.equal(change.hunksPending, true);
+  assert.equal(change.origin.kind, "subagent");
+});
+
 test("..config.ts inside the cwd keys relative, not absolute", () => {
   const store = createFileEditStore();
   const events = bus();

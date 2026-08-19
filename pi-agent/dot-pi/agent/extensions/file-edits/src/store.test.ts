@@ -74,11 +74,53 @@ test("external records mark hunks as pending", () => {
   assert.equal(change.origin.kind, "subagent");
 });
 
-test("a real edit supersedes a pending external record", () => {
+test("a local edit on top of a child's edit stays pending: its hunks are half the story", () => {
+  // The child's diff was never captured (tool_execution_end carries none), so
+  // the hunks this edit brings describe one call out of two. Calling that
+  // settled is what made /files show a one-line diff for a file a subagent had
+  // rewritten; staying pending sends the viewer to git HEAD for the whole file.
   const store = createFileEditStore();
   store.recordExternal({ path: "a.ts", origin: { kind: "subagent", id: "sa-2", name: "sa-2" }, at: 1 });
   store.record({ path: "a.ts", hunks: [hunk(2)], added: 2, removed: 0, isNew: false, origin: SELF, at: 2 });
+  const change = store.get("a.ts")!;
+  assert.equal(change.hunksPending, true);
+  assert.equal(change.edits, 2);
+  // Last writer wins the badge, and the local hunks stay as the fallback for
+  // when git cannot answer.
+  assert.equal(change.origin.kind, "self");
+  assert.equal(change.hunks.length, 1);
+});
+
+test("a file no child touched settles as soon as it is recorded", () => {
+  const store = createFileEditStore();
+  store.record({ path: "a.ts", hunks: [hunk(2)], added: 2, removed: 0, isNew: false, origin: SELF, at: 1 });
   assert.equal(store.get("a.ts")?.hunksPending, false);
+});
+
+test("a child's file goes pending again after every later local edit", () => {
+  // Resolving once is not enough: the next local edit lands after the diff git
+  // gave us, so the viewer has to ask again.
+  const store = createFileEditStore();
+  store.recordExternal({ path: "a.ts", origin: { kind: "workflow", label: "run" }, at: 1 });
+  store.resolveHunks("a.ts", { hunks: [hunk(9)], added: 9, removed: 0 });
+  assert.equal(store.get("a.ts")?.hunksPending, false);
+  store.record({ path: "a.ts", hunks: [hunk(1)], added: 1, removed: 0, isNew: false, origin: SELF, at: 3 });
+  assert.equal(store.get("a.ts")?.hunksPending, true);
+});
+
+test("a child edit after a local one keeps the local counts until git answers", () => {
+  const store = createFileEditStore();
+  store.record({ path: "a.ts", hunks: [hunk(4)], added: 4, removed: 2, isNew: true, origin: SELF, at: 1 });
+  store.recordExternal({ path: "a.ts", origin: { kind: "subagent", id: "sa-2", name: "writer" }, at: 2 });
+  const change = store.get("a.ts")!;
+  assert.equal(change.hunksPending, true);
+  assert.equal(change.added, 4);
+  assert.equal(change.removed, 2);
+  assert.equal(change.edits, 2);
+  assert.equal(change.isNew, true);
+  assert.equal(change.origin.kind, "subagent");
+  store.resolveHunks("a.ts", { hunks: [hunk(11)], added: 11, removed: 3 });
+  assert.deepEqual(store.totals(), { files: 1, added: 11, removed: 3 });
 });
 
 test("resolveHunks fills in a pending record", () => {
