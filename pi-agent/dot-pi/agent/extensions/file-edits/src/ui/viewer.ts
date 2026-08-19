@@ -14,7 +14,7 @@ import type {
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { pairRows, type SplitRow } from "../diff.ts";
-import type { DiffLine, FileChange } from "../domain.ts";
+import type { DiffLine, FileChange, Hunk } from "../domain.ts";
 import { diffAgainstHead } from "../git-diff.ts";
 import { iconFor, paintIcon } from "../../../shared/tui-kit/icons.ts";
 import {
@@ -27,6 +27,12 @@ import {
   fillLine,
   rgbBgOpener,
 } from "../../../shared/tui-kit/paint.ts";
+import { copyText } from "../../../shared/tui-kit/copy.ts";
+import {
+  applyTopAnchored,
+  clampOffset,
+  scrollActionFor,
+} from "../../../shared/tui-kit/scroll.ts";
 import { wordSpans } from "../intraline.ts";
 import type { FileEditStore } from "../store.ts";
 import {
@@ -91,6 +97,26 @@ function marker(kind: DiffLine["kind"]) {
   if (kind === "add") return "+";
   if (kind === "remove") return "−";
   return " ";
+}
+
+/**
+ * The diff as a patch body, for the clipboard. The markers are ASCII on
+ * purpose: the panel draws removals with U+2212 so the gutter lines up, but a
+ * copied hunk is meant to paste into a review or a patch file. Hunks are
+ * separated by a blank line so two of them do not read as one block of code
+ * that never existed.
+ */
+export function serializeHunks(hunks: ReadonlyArray<Hunk>): string {
+  return hunks
+    .map((hunk) =>
+      hunk.lines
+        .map(
+          (line) =>
+            `${line.kind === "add" ? "+" : line.kind === "remove" ? "-" : " "}${line.text}`,
+        )
+        .join("\n"),
+    )
+    .join("\n\n");
 }
 
 /** The tint openers, named once so tests assert against these rather than
@@ -172,6 +198,11 @@ export class DiffViewer implements Component {
   private done: (value: ViewerExit) => void;
 
   private offset = 0;
+  /** The body height the last render used, so a page/half-page key knows how
+   * far a page is before render() runs again. Seeded with a plausible pane
+   * rather than 0: the first keypress can arrive before the first render. */
+  private lastViewport = 20;
+  private copyNote: string | undefined;
   private closed = false;
   private unsubscribe: () => void;
 
@@ -222,6 +253,10 @@ export class DiffViewer implements Component {
   }
 
   handleInput(data: string): void {
+    // The receipt belongs to the copy that produced it; any other key that we
+    // act on moves past it. The pending copy's .then still overwrites this,
+    // which is what makes a slow copier's note land rather than vanish.
+    this.copyNote = undefined;
     if (
       this.keybindings.matches(data, "tui.select.cancel") ||
       data === "q"
@@ -239,14 +274,21 @@ export class DiffViewer implements Component {
       if (next) this.close({ next });
       return;
     }
-    if (this.keybindings.matches(data, "tui.select.down") || data === "j") {
-      this.offset += 1;
-      this.tui.requestRender();
+    if (data === "y") {
+      const change = this.change();
+      if (change) {
+        void copyText(serializeHunks(change.hunks), "diff").then((note) => {
+          this.copyNote = note;
+          this.tui.requestRender();
+        });
+      }
       return;
     }
-    if (this.keybindings.matches(data, "tui.select.up") || data === "k") {
-      this.offset = Math.max(0, this.offset - 1);
+    const action = scrollActionFor(data, this.keybindings, { vimKeys: true });
+    if (action) {
+      this.offset = applyTopAnchored(this.offset, action, this.lastViewport);
       this.tui.requestRender();
+      return;
     }
   }
 
@@ -382,10 +424,15 @@ export class DiffViewer implements Component {
         : this.stackedLines(change!, inner - 2);
 
     const height = bodyHeight(this.tui.terminal.rows, DiffViewer.CHROME);
-    this.offset = Math.max(
-      0,
-      Math.min(this.offset, Math.max(0, body.length - height)),
-    );
+    this.lastViewport = height;
+    // The kit asks callers to clamp on store, which we cannot: the maximum
+    // offset depends on body.length, and that is only known here. Clamping
+    // here is equivalent because the assignment writes the clamped value back
+    // into this.offset, and render() always follows the requestRender that
+    // handleInput issued — so `G`'s sentinel is replaced by a real offset
+    // before the next keypress reads it, and `k` after `G` moves one line up
+    // from the bottom rather than out of a number nothing can walk back from.
+    this.offset = clampOffset(this.offset, Math.max(0, body.length - height));
 
     // Always emit `height` rows, blank ones included, so the panel keeps its
     // shape whether the diff is three lines or three hundred.
@@ -404,15 +451,11 @@ export class DiffViewer implements Component {
           : "",
       ),
     );
-    lines.push(
-      outerLine(
-        width,
-        theme.fg(
-          "dim",
-          `  s split/stacked · n/p file · j/k scroll · ${configuredKeys(this.keybindings, "tui.select.cancel")}/q close`,
-        ),
-      ),
-    );
+    const legend =
+      `  s split/stacked · n/p file · j/k/ctrl-d/u scroll · g/G top/bottom` +
+      ` · y copy · ${configuredKeys(this.keybindings, "tui.select.cancel")}/q close` +
+      (this.copyNote ? ` · ${this.copyNote}` : "");
+    lines.push(outerLine(width, theme.fg("dim", legend)));
 
     return lines;
   }

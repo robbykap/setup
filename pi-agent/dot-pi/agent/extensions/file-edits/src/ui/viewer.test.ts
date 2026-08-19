@@ -12,6 +12,7 @@ import {
   highlightForChange,
   needsHunkResolution,
   REMOVED_OPENER,
+  serializeHunks,
   type ViewMode,
 } from "./viewer.ts";
 
@@ -158,6 +159,29 @@ const theme = new Theme(
 );
 const keybindings = getKeybindings() as never;
 
+function viewerFor(width: number, mode: ViewMode, hunks = MULTI_HUNK.hunks) {
+  const store = createFileEditStore();
+  store.record({
+    path: "src/a.ts",
+    hunks,
+    added: 2,
+    removed: 1,
+    isNew: false,
+    origin: { kind: "self" },
+    at: 0,
+  });
+  return new DiffViewer(
+    { requestRender() {}, terminal: { rows: 30, columns: width } } as never,
+    theme,
+    keybindings,
+    store,
+    "src/a.ts",
+    { mode },
+    ["src/a.ts"],
+    () => {},
+  );
+}
+
 function renderAt(width: number, mode: ViewMode): string[] {
   const store = createFileEditStore();
   store.record({
@@ -273,4 +297,67 @@ test("a context line keeps its highlighting even beside a counterpart", () => {
   // Only changed lines get intraline spans; a context line never does, so its
   // highlighting survives.
   assert.equal(codeBody(theme, CONTEXT, "const a = 2", HIGHLIGHTED), HIGHLIGHTED);
+});
+
+// --- what `y` puts on the clipboard -----------------------------------------
+
+test("each kind of line gets its patch marker", () => {
+  assert.equal(
+    serializeHunks(MULTI_HUNK.hunks.slice(0, 1)),
+    " const a = 1\n-const b = 2\n+const b = 3",
+  );
+});
+
+test("hunks are separated by a blank line", () => {
+  // Two hunks run together would paste as one contiguous block of code that
+  // never existed in the file.
+  assert.equal(
+    serializeHunks(MULTI_HUNK.hunks),
+    " const a = 1\n-const b = 2\n+const b = 3\n\n+export {}",
+  );
+});
+
+test("the remove marker is ASCII, not the dash the panel draws", () => {
+  // marker() uses U+2212 so the gutter lines up under a proportional-looking
+  // font; a patch on the clipboard has to be a patch.
+  assert.ok(!serializeHunks(MULTI_HUNK.hunks).includes("\u2212"));
+});
+
+test("no hunks serialize to nothing", () => {
+  assert.equal(serializeHunks([]), "");
+});
+
+// --- scrolling --------------------------------------------------------------
+
+test("`k` after `G` steps back one line, not out of the sentinel", () => {
+  // G stores MAX_SAFE_INTEGER; only render() knows the real maximum, so it
+  // has to write the clamped offset back before the next key reads it.
+  // A body taller than the 26-row viewport, so there is somewhere to scroll.
+  const long = [
+    {
+      oldStart: 1,
+      newStart: 1,
+      lines: Array.from({ length: 60 }, (_, i) => ({
+        kind: "context" as const,
+        text: `line ${i}`,
+        oldLine: i + 1,
+        newLine: i + 1,
+      })),
+    },
+  ];
+  const shows = (lines: string[], text: string) =>
+    lines.some((line) => new RegExp(`${text}\\b`).test(stripAnsi(line)));
+
+  const viewer = viewerFor(100, "stacked", long);
+  viewer.handleInput("G");
+  const bottom = viewer.render(100);
+  assert.ok(shows(bottom, "line 59"), "`G` did not reach the last line");
+
+  viewer.handleInput("k");
+  const up = viewer.render(100);
+  // Exactly one line back: the last line is gone, the one before it is now
+  // the bottom row. A sentinel left in this.offset would have shown the same
+  // rows twice instead.
+  assert.ok(!shows(up, "line 59"), "`k` after `G` did not move");
+  assert.ok(shows(up, "line 58"), "`k` after `G` moved more than a line");
 });
