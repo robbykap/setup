@@ -263,7 +263,9 @@ export class TerminalDashboard implements Component {
     // through truncateToWidth a second time.
     const rowLines = this.renderRows(terminals, innerWidth, bodyHeight);
     for (let i = 0; i < bodyHeight; i++) {
-      lines.push(divider + (rowLines[i] ?? " ".repeat(innerWidth)) + divider);
+      lines.push(
+        divider + (rowLines[i] ?? " ".repeat(Math.max(0, innerWidth))) + divider,
+      );
     }
 
     // Bottom border
@@ -432,7 +434,11 @@ export class TerminalDetailView implements Component {
     // The receipt belongs to the copy that produced it: any keypress at all
     // clears it, handled or not. The pending copy's .then still overwrites
     // this, which is what makes a slow copier's note land rather than vanish.
+    // Keys we don't bind return without asking for a render, so repaint here
+    // or the cleared note lingers on screen until the next tick.
+    const hadNote = this.copyNote !== undefined;
     this.copyNote = undefined;
+    if (hadNote) this.tui.requestRender();
     if (
       this.keybindings.matches(data, "app.interrupt") ||
       this.keybindings.matches(data, "tui.select.cancel")

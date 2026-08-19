@@ -190,7 +190,11 @@ export class CommandViewer implements Component {
     // The receipt belongs to the copy that produced it: any keypress at all
     // clears it, handled or not. The pending copy's .then still overwrites
     // this, which is what makes a slow copier's note land rather than vanish.
+    // Keys we don't bind return without asking for a render, so repaint here
+    // or the cleared note lingers on screen until the next tick.
+    const hadNote = this.copyNote !== undefined;
     this.copyNote = undefined;
+    if (hadNote) this.tui.requestRender();
     if (
       this.keybindings.matches(data, "tui.select.cancel") ||
       this.keybindings.matches(data, "app.interrupt")
