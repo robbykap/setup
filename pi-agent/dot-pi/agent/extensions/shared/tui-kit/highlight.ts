@@ -4,10 +4,12 @@
  * pi's highlightCode uses the active theme singleton, so the token colours
  * always match the running TUI without any mapping here. What it does not
  * guarantee is shape: callers zip highlighted lines back onto diff hunks, so
- * a mismatched line count would smear code across the wrong rows. On any
- * doubt — no language, unknown language, count mismatch, a throw — the
- * caller gets the plain lines back and the view degrades to what it renders
- * today.
+ * a mismatched line count would smear code across the wrong rows. With no
+ * language the caller gets plain lines back from the early return, and a
+ * throw or a count mismatch degrades to plain lines too. An unknown language
+ * under a live theme comes back as pi's own code-block-tinted lines rather
+ * than plain ones — fine, because the preserved line count is the contract
+ * callers actually rely on.
  */
 
 import {
