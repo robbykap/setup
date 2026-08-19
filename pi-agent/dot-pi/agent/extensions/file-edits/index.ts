@@ -157,13 +157,15 @@ export default function (pi: ExtensionAPI) {
         // A failure collapses like everything else: renderCall drew the header
         // and this slot adds the reason, in a dim line rather than a red box.
         // ctrl+o — the expanded view — still gets the built-in, and so does a
-        // still-streaming result.
+        // still-streaming result. A recorded change wins over isError, as it
+        // does in renderCall: a hook can mark a call that did apply an edit as
+        // an error, and that row should still be the recorded one.
         const change = calls.get(context.toolCallId);
         const expanded = options.expanded || context.expanded;
         const failed = context.isError
           ? failedCallPath(context.args, context.cwd)
           : undefined;
-        if (!expanded && !options.isPartial && failed) {
+        if (!expanded && !options.isPartial && !change && failed) {
           return noteRow(
             context.lastComponent,
             failureReason(result.content),
@@ -196,6 +198,12 @@ export default function (pi: ExtensionAPI) {
 
     const writeTool: typeof baseWrite = {
       ...baseWrite,
+      // The built-in edit sets this (edit.js:178) and the built-in write does
+      // not, so without it ToolExecutionComponent paints its own colored Box
+      // around our plain rows (tool-execution.js:50) — a red block behind a
+      // collapsed failure. "self" hands the framing to us, as it already does
+      // for edit; the rows draw their own leading spacing either way.
+      renderShell: "self",
       async execute(toolCallId, params, signal, onUpdate, executeCtx) {
         return executeAndRecord({
           toolCallId,
@@ -233,7 +241,7 @@ export default function (pi: ExtensionAPI) {
         const failed = context.isError
           ? failedCallPath(context.args, context.cwd)
           : undefined;
-        if (!expanded && !options.isPartial && failed) {
+        if (!expanded && !options.isPartial && !change && failed) {
           return noteRow(
             context.lastComponent,
             failureReason(result.content),
