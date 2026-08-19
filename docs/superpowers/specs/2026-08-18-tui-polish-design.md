@@ -158,6 +158,32 @@ scroll clamping, copy fallbacks. Extension-level tests update alongside:
 picker row rendering, viewer layout, collapsed bash row, /files audit cases.
 Every rendered line asserts `visibleWidth` ≤ declared width.
 
+## Addendum (added mid-implementation, user-requested)
+
+### Status bar polish
+
+A `tui-kit/status.ts` unit formats every extension's segment the same way:
+painted icon (from `UI_ICONS`/file icons), accent count, muted label, error
+tail in the error color. file-edits, commands, subagents, and
+background-terminals adopt it, and `shared/status-bar.ts`'s `SEGMENT_ORDER`
+gains "commands" at a deliberate position instead of the alphabetical
+fallback.
+
+### Rule-based picker grouping
+
+/cmds, /files, and the /subagents list group rows under `sectionRule`
+headers when no filter is active (a live filter keeps today's flat
+fuzzy-ranked list). Classification is deterministic — no model calls:
+
+- Commands: by the first real executable (env-prefixes and `cd x &&`
+  stripped): git, search (rg/grep/fd/find), test, build, network
+  (curl/wget/ssh…), files (ls/cat/cp…), packages, run, other.
+- Files: new / modified / from agents (child-session origin).
+- Subagents: running / done / failed.
+
+Headers are not selectable; selection and filter state keep their existing
+semantics over the item list alone.
+
 ## Implementation notes
 
 - Rollout order: tui-kit first (icons, highlight, selection, frame, scroll,

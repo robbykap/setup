@@ -1057,7 +1057,136 @@ git commit -m "test: pin the /files recording scenarios found by the audit"
 
 ---
 
-### Task 17: Final verification
+### Task 17: `tui-kit/status.ts` — one status-segment shape
+
+**Files:**
+- Create: `pi-agent/dot-pi/agent/extensions/shared/tui-kit/status.ts`, `status.test.ts`
+- Modify: `extensions/shared/status-bar.ts` (SEGMENT_ORDER), and the `updateStatus` functions in `file-edits/index.ts`, `commands/index.ts`, `subagents/index.ts` (or wherever its status is set — grep `setStatus`), `background-terminals` (same grep).
+
+- [ ] **Step 1: TDD the formatter.** `status.test.ts`: a segment with icon+count+label renders `<icon> <count> <label>` with count accent / label muted; an error tail appends in the error color; `visibleWidth` of a painted segment equals the unpainted text width. Implement:
+
+```ts
+/**
+ * One shape for every extension's status segment, so the bar reads as one
+ * system: painted icon, accent count, muted label, then optional tails —
+ * error tails in the error colour, neutral tails dim.
+ */
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { paintIcon, type FileIcon } from "./icons.ts";
+
+export interface StatusTail {
+  readonly text: string;
+  readonly kind: "error" | "neutral";
+}
+
+export function statusSegment(
+  theme: Theme,
+  icon: FileIcon,
+  count: number | string,
+  label: string,
+  tails: ReadonlyArray<StatusTail> = [],
+): string {
+  const parts = [
+    `${paintIcon(icon)} ${theme.fg("accent", String(count))} ${theme.fg("muted", label)}`,
+  ];
+  for (const tail of tails) {
+    parts.push(theme.fg(tail.kind === "error" ? "error" : "dim", tail.text));
+  }
+  return parts.join(" ");
+}
+```
+
+- [ ] **Step 2:** Re-point each extension's `updateStatus` to build its segment through `statusSegment` (read each first; keep each segment's information identical — only the formatting unifies). Icons: `UI_ICONS.terminal` for commands (replacing its `❯` glyph), `FALLBACK` (0xf016) for file-edits, `UI_ICONS.agent` for subagents, `UI_ICONS.clock` for background-terminals while anything runs and `UI_ICONS.check` when all are done. Failed counts become error tails (e.g. `6✗`).
+- [ ] **Step 3:** In `shared/status-bar.ts`, insert `"commands"` into `SEGMENT_ORDER` after `"file-edits"`.
+- [ ] **Step 4:** Verify: `npm test` in `extensions/shared`, plus `npm run check` in every touched extension and the agent root. Existing status-bar tests must stay green.
+- [ ] **Step 5: Commit:** `git commit -m "feat: one status-segment shape across the status bar"`
+
+---
+
+### Task 18: `tui-kit/grouping.ts` — headers over a flat selection
+
+**Files:**
+- Create: `pi-agent/dot-pi/agent/extensions/shared/tui-kit/grouping.ts`, `grouping.test.ts`
+
+Pickers keep their existing flat `rows`/`index`/`PickerState` semantics; grouping is a *render-time* transform that interleaves non-selectable header lines.
+
+- [ ] **Step 1: TDD.** Tests: items keep their flat order within groups; group order follows first appearance in the input (input is most-recent-first, so the most recently active group leads); `displayRows` has one header per group; `displayIndexOf(itemIndex)` maps a flat item index to its display row; empty input yields no rows.
+- [ ] **Step 2: Implement:**
+
+```ts
+/**
+ * Grouping for pickers: a render-time transform only. Selection, filtering,
+ * and store order stay flat; this interleaves header rows and answers where
+ * a flat index landed, so the cursor math never learns about groups.
+ */
+export type DisplayRow<T> =
+  | { readonly kind: "header"; readonly label: string }
+  | { readonly kind: "item"; readonly item: T; readonly index: number };
+
+export function groupRows<T>(
+  items: ReadonlyArray<T>,
+  labelOf: (item: T) => string,
+): ReadonlyArray<DisplayRow<T>> {
+  const rows: DisplayRow<T>[] = [];
+  const seen = new Map<string, DisplayRow<T>[]>();
+  for (const [index, item] of items.entries()) {
+    const label = labelOf(item);
+    let bucket = seen.get(label);
+    if (!bucket) {
+      bucket = [];
+      seen.set(label, bucket);
+    }
+    bucket.push({ kind: "item", item, index });
+  }
+  for (const [label, bucket] of seen) {
+    rows.push({ kind: "header", label }, ...bucket);
+  }
+  return rows;
+}
+
+export function displayIndexOf<T>(
+  rows: ReadonlyArray<DisplayRow<T>>,
+  itemIndex: number,
+): number {
+  return rows.findIndex(
+    (row) => row.kind === "item" && row.index === itemIndex,
+  );
+}
+```
+
+- [ ] **Step 3:** `npm test` in `extensions/shared` green; agent-root `npm run check` clean. Commit: `git commit -m "feat: add render-time picker grouping to tui-kit"`
+
+---
+
+### Task 19: /cmds — classify commands and group the picker
+
+**Files:**
+- Create: `pi-agent/dot-pi/agent/extensions/commands/src/classify.ts`, `classify.test.ts`
+- Modify: `commands/src/ui/picker.ts`, `commands/package.json` (test list)
+
+- [ ] **Step 1: TDD the classifier.** Categories and rules (first *real* executable: strip `FOO=bar` env prefixes, a leading `cd … &&`, and `sudo`; then the basename of the first token, refined by subcommand where noted):
+  - `git` → git; `search`: rg, grep, egrep, fd, find, ag; `test`: vitest, jest, pytest, or npm/pnpm/yarn/bun/cargo/go/node whose args contain `test`; `build`: tsc, make, or npm/pnpm/yarn run build, cargo/go build, vite build; `network`: curl, wget, http, ping, ssh, scp, dig, nc; `files`: ls, cat, head, tail, cp, mv, rm, mkdir, touch, sed, awk, wc, diff; `packages`: npm/pnpm/yarn/bun install|add|remove, brew, pip, pipx, cargo add; `run`: node, python, python3, bun, deno, npx, or npm/pnpm/yarn run/start/dev; everything else → `other`.
+  - Precedence: test and build and packages beat run for the npm-family commands; document the order in a comment. Multi-command lines (`a && b`) classify by the FIRST command after the `cd` strip.
+  - Tests: at least one case per category, plus `cd x && rg foo` → search, `FOO=1 npm test` → test, `sudo make install` → build, empty string → other.
+- [ ] **Step 2:** In the picker's `render`, when `this.state.query` is empty, wrap the row list with `groupRows(rows, (r) => classify(r.command))` and render header rows with `sectionRule(theme, inner, label, "muted")` inside `bodyRow`; item rows render exactly as today (selection fill included). The windowing/cursor logic must now slice *display rows* while keeping the cursor on item rows only — compute the visible window around `displayIndexOf(rows, this.state.index)`. With a non-empty query, behavior is unchanged (flat, no headers).
+- [ ] **Step 3:** Add `src/classify.test.ts` to the package test list. `npm run check && npm test` in `extensions/commands` — green.
+- [ ] **Step 4: Commit:** `git commit -m "feat: group the command picker by what commands do"`
+
+---
+
+### Task 20: /files and /subagents — grouped lists
+
+**Files:**
+- Modify: `file-edits/src/ui/picker.ts` (+ a `groupLabel` helper in `file-edits/src/domain.ts` with tests in an existing suite)
+- Modify: `subagents/src/ui/takeover.ts` (list rendering)
+
+- [ ] **Step 1: /files:** group label per FileChange: `"new"` when `isNew`, `"from agents"` when `origin` is a child session (see `describeOrigin`), else `"modified"`. Same render-time pattern as Task 19 (headers via `sectionRule`, only when the filter is empty). Test the label function.
+- [ ] **Step 2: /subagents:** group the takeover list rows by status — `running` / `done` / `failed` (read the snapshot's status field in `src/domain.ts` first and map its actual states onto those three; note the mapping in a comment). Headers via `sectionRule`; selection stays on item rows.
+- [ ] **Step 3:** `npm run check && npm test` in both extensions — green. Commit: `git commit -m "feat: group the file and subagent lists"`
+
+---
+
+### Task 21: Final verification
 
 - [ ] **Step 1:** From `pi-agent/dot-pi/agent`: `npm run check` — clean.
 - [ ] **Step 2:** Kit suite: `node --test --experimental-strip-types extensions/shared/tui-kit/*.test.ts` — green.
@@ -1078,3 +1207,4 @@ git commit -m "docs: describe the shared tui-kit"
 - No stderr gutter in the commands viewer: the record's output is one combined stream, so streams cannot be told apart. The exit-status section rule carries the failure signal.
 - Intraline-paired diff lines keep intraline painting (over the new tint) instead of syntax highlighting — span boundaries cannot be mapped onto an ANSI-highlighted string.
 - Mouse-clickable copy buttons: not in this plan (investigation-only stretch, per spec).
+- Tasks 17–20 were added mid-execution at the user's request (status-bar polish and rule-based picker grouping); the spec addendum records the design.
