@@ -7,9 +7,11 @@
  * background after every full reset, so the fill holds edge to edge, and the
  * visible width never changes — the invariant every overlay line lives by.
  *
- * Theme.fg/bg are not the culprit; they close with the narrow `\x1b[39m` /
- * `\x1b[49m` and leave the background standing. The full resets come from
- * paintIcon and from syntax-highlighted code pasted into a row.
+ * `theme.fg` is not the culprit; it closes with the narrow `\x1b[39m` and
+ * leaves the background standing. `theme.bg` is a different story: it closes
+ * with `\x1b[49m`, which clears the fill for the remainder of the row — nested
+ * `theme.bg` spans are not supported inside fillLine. The full resets come
+ * from paintIcon and from syntax-highlighted code pasted into a row.
  */
 
 import type { Theme } from "@earendil-works/pi-coding-agent";

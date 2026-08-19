@@ -5,10 +5,11 @@
  * too, so a naive `opener + row + reset` drops the fill partway across. These
  * tests assert the re-opening, not just the width.
  *
- * Theme.fg/bg are NOT that hazard: they close with the narrow `\x1b[39m` /
- * `\x1b[49m`, which leave the other channel alone. The real source of full
- * resets in these rows is paintIcon (and syntax highlighting), so that is what
- * the row test below paints with.
+ * `theme.fg` is NOT that hazard: it closes with the narrow `\x1b[39m` and is
+ * harmless. `theme.bg` is: it closes with `\x1b[49m`, which clears the fill
+ * for the remainder of the row — nested `theme.bg` spans are not supported
+ * inside fillLine. The real source of full resets in these rows is paintIcon
+ * (and syntax highlighting), so that is what the row test below paints with.
  *
  * The theme here is a REAL Theme, for the same reason frame.test.ts uses one:
  * a stub whose helpers return their input emits no escape bytes, and escape
