@@ -1,10 +1,14 @@
 /**
- * Nerd-font file-type glyphs in Catppuccin Mocha.
+ * Nerd-font glyphs in Catppuccin Mocha: file-type icons keyed by name and
+ * extension, plus the shared UI glyphs (status, actors, time) in UI_ICONS.
  *
  * These are literal RGB rather than ThemeColor because ThemeColor is a fixed
- * 43-name union with no per-language entries. Every value below is a Mocha
- * accent taken from themes/catppuccin-mocha.json, so the icons cannot drift
- * from the rest of the TUI.
+ * union of role names with no per-language entries. Every value below is a
+ * Mocha accent taken from themes/catppuccin-mocha.json, so the icons cannot
+ * drift from the rest of the TUI.
+ *
+ * Lifted out of file-edits so every extension paints the same icon for the
+ * same file. Extensions reach in by relative path.
  */
 
 export type Rgb = [number, number, number];
@@ -75,7 +79,7 @@ const BY_EXTENSION: Record<string, FileIcon> = {
   fish: glyph(0xe795, GREEN),
   md: glyph(0xe73e, SUBTEXT),
   mdx: glyph(0xe73e, SUBTEXT),
-  txt: glyph(0xf016, SUBTEXT),
+  txt: glyph(0xf016, SUBTEXT), // same as FALLBACK; explicit so .txt stays stable if the fallback changes
   toml: glyph(0xe615, PEACH),
   yaml: glyph(0xe615, PEACH),
   yml: glyph(0xe615, PEACH),
@@ -86,7 +90,7 @@ const BY_EXTENSION: Record<string, FileIcon> = {
   vue: glyph(0xe6a0, GREEN),
   svelte: glyph(0xe697, PEACH),
   graphql: glyph(0xe662, MAUVE),
-  proto: glyph(0xe61e, SUBTEXT),
+  proto: glyph(0xe60b, SUBTEXT),
   tf: glyph(0xe69a, MAUVE),
   lock: glyph(0xf023, SUBTEXT),
   png: glyph(0xf1c5, MAUVE),
@@ -108,6 +112,14 @@ export const UI_ICONS = {
   check: glyph(0xf00c, GREEN),
   cross: glyph(0xf00d, RED),
 } as const;
+
+/** Every icon in the module, for the width invariant test. */
+export const ALL_ICONS: readonly FileIcon[] = [
+  FALLBACK,
+  ...Object.values(BY_NAME),
+  ...Object.values(BY_EXTENSION),
+  ...Object.values(UI_ICONS),
+];
 
 export function iconFor(path: string): FileIcon {
   const name = (path.split("/").pop() ?? path).toLowerCase();

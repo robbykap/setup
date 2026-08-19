@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { iconFor, paintIcon, UI_ICONS } from "./icons.ts";
+import { ALL_ICONS, iconFor, paintIcon } from "./icons.ts";
 
 /** Assert on codepoints, not literal glyphs: a mangled private-use character
  * would otherwise make an empty-vs-empty comparison pass silently. */
@@ -17,10 +17,14 @@ test("known extensions get their own glyph and color", () => {
   assert.equal(codePointOf("README.md"), 0xe73e);
 });
 
-test("every glyph is exactly one non-empty character", () => {
-  for (const path of ["a.ts", "a.py", "Dockerfile", "Makefile", ".gitignore", "x.unknown"]) {
-    const { glyph } = iconFor(path);
-    assert.equal([...glyph].length, 1, `bad glyph for ${path}`);
+test("every icon paints as exactly one cell", () => {
+  for (const icon of ALL_ICONS) {
+    assert.equal([...icon.glyph].length, 1);
+    assert.equal(
+      visibleWidth(paintIcon(icon)),
+      1,
+      `bad width for ${icon.glyph.codePointAt(0)?.toString(16)}`,
+    );
   }
 });
 
@@ -47,14 +51,10 @@ test("paintIcon wraps the glyph in a truecolor escape", () => {
   assert.equal(paintIcon(icon), `\x1b[38;2;137;180;250m${icon.glyph}\x1b[0m`);
 });
 
-test("expanded coverage maps new extensions off the fallback", () => {
-  for (const path of ["a.rb", "b.java", "c.sql", "d.vue", "e.png", "dir/.env"]) {
-    assert.notEqual(iconFor(path).glyph, iconFor("unknown.xyz123").glyph);
-  }
-});
-
-test("ui icons paint without changing visible width", () => {
-  for (const icon of Object.values(UI_ICONS)) {
-    assert.equal(visibleWidth(paintIcon(icon)), 1);
-  }
+test("expanded coverage maps new extensions to their own glyphs", () => {
+  assert.equal(codePointOf("a.rb"), 0xe739);
+  assert.equal(codePointOf("b.java"), 0xe738);
+  assert.equal(codePointOf("d.vue"), 0xe6a0);
+  assert.equal(codePointOf("dir/.env"), 0xe615);
+  assert.deepEqual(iconFor("dir/.env").rgb, [249, 226, 175]);
 });
