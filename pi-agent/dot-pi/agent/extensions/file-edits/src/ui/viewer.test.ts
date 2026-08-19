@@ -159,7 +159,12 @@ const theme = new Theme(
 );
 const keybindings = getKeybindings() as never;
 
-function viewerFor(width: number, mode: ViewMode, hunks = MULTI_HUNK.hunks) {
+function viewerFor(
+  width: number,
+  mode: ViewMode,
+  hunks = MULTI_HUNK.hunks,
+  requestRender: () => void = () => {},
+) {
   const store = createFileEditStore();
   store.record({
     path: "src/a.ts",
@@ -171,7 +176,7 @@ function viewerFor(width: number, mode: ViewMode, hunks = MULTI_HUNK.hunks) {
     at: 0,
   });
   return new DiffViewer(
-    { requestRender() {}, terminal: { rows: 30, columns: width } } as never,
+    { requestRender, terminal: { rows: 30, columns: width } } as never,
     theme,
     keybindings,
     store,
@@ -325,6 +330,46 @@ test("the remove marker is ASCII, not the dash the panel draws", () => {
 
 test("no hunks serialize to nothing", () => {
   assert.equal(serializeHunks([]), "");
+});
+
+test("`y` copies the diff and shows the receipt", async () => {
+  let copied: string | undefined;
+  const viewer = viewerFor(100, "stacked");
+  viewer.copier = (text) => {
+    copied = text;
+  };
+  viewer.handleInput("y");
+  // The note lands when the copier settles, not when the key arrives.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(copied, serializeHunks(MULTI_HUNK.hunks));
+  assert.ok(
+    viewer.render(100).some((line) => stripAnsi(line).includes("copied diff")),
+    "the footer never showed the receipt",
+  );
+});
+
+test("`y` with nothing to copy says so and never reaches the clipboard", async () => {
+  let called = false;
+  const viewer = viewerFor(100, "stacked", []);
+  viewer.copier = () => {
+    called = true;
+  };
+  viewer.handleInput("y");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(called, false, "an empty diff went to the clipboard");
+  assert.ok(
+    viewer
+      .render(100)
+      .some((line) => stripAnsi(line).includes("nothing to copy")),
+    "the footer never said why nothing happened",
+  );
+});
+
+test("the legend fits an 80-column terminal", () => {
+  // The footer is one line; wider than the narrowest terminal anyone uses and
+  // the close key — the way out — is what falls off the end.
+  const legend = viewerFor(100, "stacked").render(100).at(-1)!;
+  assert.ok(visibleWidth(stripAnsi(legend).trimEnd()) <= 80, legend);
 });
 
 // --- scrolling --------------------------------------------------------------

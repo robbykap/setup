@@ -102,7 +102,7 @@ function marker(kind: DiffLine["kind"]) {
 /**
  * The diff as a patch body, for the clipboard. The markers are ASCII on
  * purpose: the panel draws removals with U+2212 so the gutter lines up, but a
- * copied hunk is meant to paste into a review or a patch file. Hunks are
+ * copied hunk is meant to paste into a review. Hunks are
  * separated by a blank line so two of them do not read as one block of code
  * that never existed.
  */
@@ -205,6 +205,9 @@ export class DiffViewer implements Component {
   private copyNote: string | undefined;
   private closed = false;
   private unsubscribe: () => void;
+  /** The clipboard itself, injectable so a test can press `y` without one.
+   * Package-internal: nothing outside this extension sets it. */
+  copier?: (text: string) => Promise<void> | void;
 
   constructor(
     tui: TUI,
@@ -253,9 +256,9 @@ export class DiffViewer implements Component {
   }
 
   handleInput(data: string): void {
-    // The receipt belongs to the copy that produced it; any other key that we
-    // act on moves past it. The pending copy's .then still overwrites this,
-    // which is what makes a slow copier's note land rather than vanish.
+    // The receipt belongs to the copy that produced it: any keypress at all
+    // clears it, handled or not. The pending copy's .then still overwrites
+    // this, which is what makes a slow copier's note land rather than vanish.
     this.copyNote = undefined;
     if (
       this.keybindings.matches(data, "tui.select.cancel") ||
@@ -276,12 +279,24 @@ export class DiffViewer implements Component {
     }
     if (data === "y") {
       const change = this.change();
-      if (change) {
-        void copyText(serializeHunks(change.hunks), "diff").then((note) => {
+      if (!change) return;
+      if (change.hunks.length === 0) {
+        // An empty clipboard reads as a failed copy; say which it was.
+        this.copyNote = "nothing to copy";
+        this.tui.requestRender();
+        return;
+      }
+      void copyText(serializeHunks(change.hunks), "diff", this.copier)
+        .then((note) => {
+          // A copy can outlive the viewer: the note has nowhere to land, and
+          // rendering a disposed component is worse than dropping it.
+          if (this.closed) return;
           this.copyNote = note;
           this.tui.requestRender();
-        });
-      }
+        })
+        // copyText never throws, but the render above can; the no-throw
+        // guarantee ends at its boundary (tui-kit/copy.ts).
+        .catch(() => {});
       return;
     }
     const action = scrollActionFor(data, this.keybindings, { vimKeys: true });
@@ -451,8 +466,10 @@ export class DiffViewer implements Component {
           : "",
       ),
     );
+    // Short enough to fit an 80-column terminal, so the close key — the way
+    // out — is never the part that falls off the end.
     const legend =
-      `  s split/stacked · n/p file · j/k/ctrl-d/u scroll · g/G top/bottom` +
+      `  s split · n/p file · j/k ^d/^u g/G scroll` +
       ` · y copy · ${configuredKeys(this.keybindings, "tui.select.cancel")}/q close` +
       (this.copyNote ? ` · ${this.copyNote}` : "");
     lines.push(outerLine(width, theme.fg("dim", legend)));
