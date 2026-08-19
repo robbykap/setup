@@ -38,7 +38,10 @@ const FALLBACK = glyph(0xf016, SUBTEXT);
 const BY_NAME: Record<string, FileIcon> = {
   dockerfile: glyph(0xe7b0, BLUE),
   makefile: glyph(0xe673, PEACH),
+  justfile: glyph(0xe673, PEACH),
   ".gitignore": glyph(0xe702, PEACH),
+  ".gitattributes": glyph(0xe702, PEACH),
+  ".env": glyph(0xe615, YELLOW),
 };
 
 const BY_EXTENSION: Record<string, FileIcon> = {
@@ -46,22 +49,65 @@ const BY_EXTENSION: Record<string, FileIcon> = {
   tsx: glyph(0xe628, BLUE),
   js: glyph(0xe781, YELLOW),
   jsx: glyph(0xe781, YELLOW),
+  mjs: glyph(0xe781, YELLOW),
+  cjs: glyph(0xe781, YELLOW),
   json: glyph(0xe60b, YELLOW),
+  jsonc: glyph(0xe60b, YELLOW),
   py: glyph(0xe73c, YELLOW),
   rs: glyph(0xe7a8, PEACH),
   go: glyph(0xe627, SKY),
+  c: glyph(0xe61e, BLUE),
+  h: glyph(0xe61e, BLUE),
+  cpp: glyph(0xe61d, BLUE),
+  hpp: glyph(0xe61d, BLUE),
+  java: glyph(0xe738, PEACH),
+  kt: glyph(0xe634, MAUVE),
+  swift: glyph(0xe755, PEACH),
+  rb: glyph(0xe739, RED),
+  php: glyph(0xe73d, MAUVE),
+  lua: glyph(0xe620, BLUE),
+  scala: glyph(0xe737, RED),
+  sql: glyph(0xe706, SKY),
   sh: glyph(0xe795, GREEN),
   bash: glyph(0xe795, GREEN),
   zsh: glyph(0xe795, GREEN),
   nu: glyph(0xe795, GREEN),
+  fish: glyph(0xe795, GREEN),
   md: glyph(0xe73e, SUBTEXT),
+  mdx: glyph(0xe73e, SUBTEXT),
+  txt: glyph(0xf016, SUBTEXT),
   toml: glyph(0xe615, PEACH),
   yaml: glyph(0xe615, PEACH),
   yml: glyph(0xe615, PEACH),
+  ini: glyph(0xe615, SUBTEXT),
   css: glyph(0xe749, MAUVE),
+  scss: glyph(0xe749, MAUVE),
   html: glyph(0xe736, RED),
+  vue: glyph(0xe6a0, GREEN),
+  svelte: glyph(0xe697, PEACH),
+  graphql: glyph(0xe662, MAUVE),
+  proto: glyph(0xe61e, SUBTEXT),
+  tf: glyph(0xe69a, MAUVE),
   lock: glyph(0xf023, SUBTEXT),
+  png: glyph(0xf1c5, MAUVE),
+  jpg: glyph(0xf1c5, MAUVE),
+  jpeg: glyph(0xf1c5, MAUVE),
+  gif: glyph(0xf1c5, MAUVE),
+  webp: glyph(0xf1c5, MAUVE),
+  svg: glyph(0xf1c5, PEACH),
+  pdf: glyph(0xf1c1, RED),
+  zip: glyph(0xf1c6, SUBTEXT),
+  csv: glyph(0xf1c3, GREEN),
 };
+
+/** Non-file glyphs the dashboards share: status, actors, time. */
+export const UI_ICONS = {
+  terminal: glyph(0xe795, GREEN),
+  agent: glyph(0xeb99, MAUVE), // nf-cod-hubot
+  clock: glyph(0xf017, SUBTEXT),
+  check: glyph(0xf00c, GREEN),
+  cross: glyph(0xf00d, RED),
+} as const;
 
 export function iconFor(path: string): FileIcon {
   const name = (path.split("/").pop() ?? path).toLowerCase();

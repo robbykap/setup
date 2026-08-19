@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { iconFor, paintIcon } from "./icons.ts";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { iconFor, paintIcon, UI_ICONS } from "./icons.ts";
 
 /** Assert on codepoints, not literal glyphs: a mangled private-use character
  * would otherwise make an empty-vs-empty comparison pass silently. */
@@ -44,4 +45,16 @@ test("files with no extension fall back too", () => {
 test("paintIcon wraps the glyph in a truecolor escape", () => {
   const icon = iconFor("a.ts");
   assert.equal(paintIcon(icon), `\x1b[38;2;137;180;250m${icon.glyph}\x1b[0m`);
+});
+
+test("expanded coverage maps new extensions off the fallback", () => {
+  for (const path of ["a.rb", "b.java", "c.sql", "d.vue", "e.png", "dir/.env"]) {
+    assert.notEqual(iconFor(path).glyph, iconFor("unknown.xyz123").glyph);
+  }
+});
+
+test("ui icons paint without changing visible width", () => {
+  for (const icon of Object.values(UI_ICONS)) {
+    assert.equal(visibleWidth(paintIcon(icon)), 1);
+  }
 });

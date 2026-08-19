@@ -11,7 +11,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { largestHunk } from "../diff.ts";
 import type { FileChange } from "../domain.ts";
-import { iconFor, paintIcon } from "../icons.ts";
+import { iconFor, paintIcon } from "../../../shared/tui-kit/icons.ts";
 
 type Theme = ExtensionContext["ui"]["theme"];
 

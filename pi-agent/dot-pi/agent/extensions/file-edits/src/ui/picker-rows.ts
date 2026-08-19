@@ -6,7 +6,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { fuzzyFilter, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { describeOrigin, type FileChange } from "../domain.ts";
-import { iconFor, paintIcon } from "../icons.ts";
+import { iconFor, paintIcon } from "../../../shared/tui-kit/icons.ts";
 
 type Theme = ExtensionContext["ui"]["theme"];
 

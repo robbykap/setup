@@ -16,7 +16,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { pairRows, type SplitRow } from "../diff.ts";
 import type { DiffLine, FileChange } from "../domain.ts";
 import { diffAgainstHead } from "../git-diff.ts";
-import { iconFor, paintIcon } from "../icons.ts";
+import { iconFor, paintIcon } from "../../../shared/tui-kit/icons.ts";
 import { wordSpans } from "../intraline.ts";
 import type { FileEditStore } from "../store.ts";
 import {
