@@ -14,7 +14,6 @@ import {
   Key,
   matchesKey,
   Text,
-  truncateToWidth,
 } from "@earendil-works/pi-tui";
 import { Cause, Effect, Exit } from "effect";
 import { Type, type Static } from "typebox";
@@ -25,6 +24,12 @@ import {
   ASK_USER_TOOL_DESCRIPTION,
   buildAskUserResultMessage,
 } from "./prompt.ts";
+import {
+  bodyRow,
+  bottomBorder,
+  topBorder,
+} from "../shared/tui-kit/frame.ts";
+import { paintSelected } from "../shared/tui-kit/paint.ts";
 
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 5;
@@ -256,51 +261,52 @@ export default function askUser(pi: ExtensionAPI) {
           function render(width: number): string[] {
             if (cachedLines) return cachedLines;
 
-            const lines: string[] = [];
-            const add = (s: string) => lines.push(truncateToWidth(s, width));
+            // Everything between the two borders is a walled body row, so the
+            // card keeps its shape; `inner` is the space between the walls.
+            const inner = width - 2;
+            const lines: string[] = [topBorder(theme, width, "Question")];
+            const add = (content: string) =>
+              lines.push(bodyRow(theme, width, content));
 
-            const title = " Question ";
-            add(
-              theme.fg(
-                "accent",
-                `─${title}${"─".repeat(Math.max(0, width - title.length - 1))}`,
-              ),
-            );
             for (const line of wrapText(
               params.question,
-              Math.max(10, width - 2),
+              Math.max(10, width - 4),
             )) {
               add(` ${theme.fg("text", theme.bold(line))}`);
             }
-            lines.push("");
+            add("");
 
             for (let i = 0; i < allOptions.length; i++) {
               const opt = allOptions[i];
               const selected = i === optionIndex;
-              const prefix = selected ? theme.fg("accent", " ❯ ") : "   ";
+              const prefix = selected ? theme.fg("accent", "❯ ") : "  ";
               const marker = opt.isOther ? "✎" : `${i + 1}.`;
               const label = `${marker} ${opt.label}`;
+              const styled =
+                selected || (opt.isOther && editMode)
+                  ? theme.fg("accent", label)
+                  : theme.fg(opt.isOther ? "muted" : "text", label);
 
-              if (selected || (opt.isOther && editMode)) {
-                add(prefix + theme.fg("accent", label));
-              } else {
-                add(prefix + theme.fg(opt.isOther ? "muted" : "text", label));
-              }
+              // The fill spans the full row, so it is applied to the whole
+              // body — marker included — before bodyRow walls it in.
+              const row = ` ${prefix}${styled}`;
+              add(selected ? paintSelected(row, inner, theme) : row);
 
               if (opt.description) {
-                add(`      ${theme.fg("muted", opt.description)}`);
+                const desc = `      ${theme.fg("muted", opt.description)}`;
+                add(selected ? paintSelected(desc, inner, theme) : desc);
               }
             }
 
             if (editMode) {
-              lines.push("");
+              add("");
               add(theme.fg("muted", " Your answer:"));
-              for (const line of editor.render(width - 2)) {
+              for (const line of editor.render(Math.max(10, width - 4))) {
                 add(` ${line}`);
               }
             }
 
-            lines.push("");
+            add("");
             if (editMode) {
               add(theme.fg("dim", " Enter submit • Esc back to options"));
             } else {
@@ -311,7 +317,7 @@ export default function askUser(pi: ExtensionAPI) {
                 ),
               );
             }
-            add(theme.fg("accent", "─".repeat(width)));
+            lines.push(bottomBorder(theme, width));
 
             cachedLines = lines;
             return lines;
