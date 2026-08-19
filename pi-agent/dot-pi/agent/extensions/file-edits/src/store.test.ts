@@ -142,6 +142,20 @@ test("the store is capped, dropping the oldest entries", () => {
   assert.equal(store.get("a.ts"), undefined);
 });
 
+test("eviction drops the child marker with the record", () => {
+  // The marker is sticky for as long as the record lives. Once the file falls
+  // out of the store, a later local edit is all we know about it, and all we
+  // need: leaving the marker behind would send the viewer to git forever.
+  const store = createFileEditStore({ cap: 2 });
+  store.recordExternal({ path: "a.ts", origin: { kind: "subagent", id: "sa-2", name: "sa-2" }, at: 1 });
+  store.record({ path: "b.ts", hunks: [], added: 1, removed: 0, isNew: false, origin: SELF, at: 2 });
+  store.record({ path: "c.ts", hunks: [], added: 1, removed: 0, isNew: false, origin: SELF, at: 3 });
+  assert.equal(store.get("a.ts"), undefined);
+
+  store.record({ path: "a.ts", hunks: [hunk(1)], added: 1, removed: 0, isNew: false, origin: SELF, at: 4 });
+  assert.equal(store.get("a.ts")?.hunksPending, false);
+});
+
 test("totals sum across files", () => {
   const store = createFileEditStore();
   store.record({ path: "a.ts", hunks: [], added: 2, removed: 1, isNew: false, origin: SELF, at: 1 });

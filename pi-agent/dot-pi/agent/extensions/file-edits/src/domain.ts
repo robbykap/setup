@@ -40,10 +40,11 @@ export interface FileChange {
   readonly updatedAt: number;
   readonly origin: ChangeOrigin;
   /**
-   * True when the hunks are not the whole file's story yet: the patch failed
-   * to parse, a child session made the change and its diff is computed lazily
-   * against HEAD, or a local edit landed on a file a child had already
-   * touched, so what we hold describes one call and not the file.
+   * True when the hunks are not the whole file's story yet: a tool reported no
+   * usable patch, so the record carries zero hunks and the viewer resolves on
+   * emptiness instead, a child session made the change and its diff is
+   * computed lazily against HEAD, or a local edit landed on a file a child had
+   * already touched, so what we hold describes one call and not the file.
    */
   readonly hunksPending: boolean;
 }
