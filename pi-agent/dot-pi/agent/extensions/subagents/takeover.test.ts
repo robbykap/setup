@@ -178,6 +178,51 @@ test("a non-shell tool call opens with a rule carrying the tool name", () => {
   assertWithin(lines, 80, "non-shell tool call");
 });
 
+test("a running shell tool is framed like a settled one", () => {
+  const snap = snapshot("sa-1", {
+    liveTools: [
+      {
+        toolId: "t1",
+        name: "bash",
+        argsPreview: '{"command":"npm test"}',
+        outputPreview: "ok 1 - thing",
+      },
+    ],
+  });
+  const lines = buildTranscriptLines(snap, 80, theme);
+
+  const ruled = lines.filter((line) => line.includes("╌"));
+  assert.equal(ruled.length, 1, "the running call opens a block too");
+  assert.match(ruled[0], /\$ npm test/);
+  assert.ok(
+    lines.some((line) => line.includes("running")),
+    "the running marker stays visible",
+  );
+  assert.ok(
+    lines.some((line) => line.includes("ok 1 - thing")),
+    "the output preview still renders",
+  );
+  assertWithin(lines, 80, "live shell tool");
+});
+
+test("a shell call with no command still gets the accent $ rule", () => {
+  const accentDollar = theme.fg("accent", " $ ");
+  const withPreview = transcriptOf([
+    {
+      kind: "assistant",
+      parts: [{ type: "toolCall", toolId: "t1", name: "bash" }],
+    },
+  ]);
+
+  const ruled = withPreview.filter((line) => line.includes("╌"));
+  assert.equal(ruled.length, 1);
+  assert.ok(
+    ruled[0].includes(accentDollar),
+    `a preview-less shell call keeps the accent $ label\n${JSON.stringify(ruled[0])}`,
+  );
+  assert.ok(!ruled[0].includes("bash"), "and not the muted tool-name rule");
+});
+
 test("a long shell command cannot push the rule past the width", () => {
   const lines = transcriptOf(
     [
@@ -219,6 +264,12 @@ test("the selected dashboard row carries the selection fill, and only it", () =>
   assert.ok(
     filled[0].includes("sa-2"),
     "the highlighted row is the selected one",
+  );
+  // The marker must sit inside the fill, not in front of it: a ❯ painted
+  // before the background opener reads as a row that starts unhighlighted.
+  assert.ok(
+    filled[0].indexOf(opener) < filled[0].indexOf("❯"),
+    "the selection marker sits inside the fill",
   );
 
   lines.forEach((line, index) => {

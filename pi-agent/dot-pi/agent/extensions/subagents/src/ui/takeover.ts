@@ -528,7 +528,10 @@ class TakeoverView implements Component, Focusable {
     // Clamping here is equivalent because the assignment writes the clamped
     // value back into this.scrollOffset, and render() always follows the
     // requestRender that handleInput issued — so the next keypress reads a
-    // real offset rather than one past the end of the transcript.
+    // real offset rather than one past the end of the transcript. And with
+    // vimKeys: false neither `top` nor `bottom` is reachable here, so the
+    // scroll kit's FAR sentinel can never be stored in the first place; this
+    // clamp is belt-and-braces against a viewport that grew.
     this.scrollOffset = clampOffset(
       this.scrollOffset,
       Math.max(0, transcript.length - transcriptCapacity),

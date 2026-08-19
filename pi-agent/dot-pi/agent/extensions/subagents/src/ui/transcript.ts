@@ -114,6 +114,10 @@ const SHELL_TOOLS: ReadonlySet<string> = new Set([
  * (see backends/pi.ts safeJson), so the command sits under a named field;
  * when the JSON is unparseable or truncated we fall back to the raw preview
  * rather than dropping the block's identity.
+ *
+ * `undefined` means "not a shell tool"; a shell tool always answers with a
+ * string, empty when there is no preview to read a command out of. The two
+ * cases pick different rules, so they must stay distinguishable.
  */
 function shellCommandOf(name: string, argsPreview: string): string | undefined {
   if (!SHELL_TOOLS.has(name.toLowerCase())) return undefined;
@@ -144,23 +148,24 @@ function shellCommandOf(name: string, argsPreview: string): string | undefined {
  */
 function renderToolCall(
   theme: Theme,
-  part: Extract<TranscriptPart, { type: "toolCall" }>,
+  part: Pick<
+    Extract<TranscriptPart, { type: "toolCall" }>,
+    "name" | "argsPreview"
+  >,
   width: number,
   out: string[],
 ) {
   const preview = part.argsPreview ? sanitizeText(part.argsPreview) : "";
   const command = shellCommandOf(part.name, preview);
 
-  if (command) {
+  if (command !== undefined) {
     // The command IS the block's content; repeating the raw JSON below it
     // would only push the transcript around.
-    out.push(truncateToWidth(sectionRule(theme, width, `$ ${command}`), width));
+    out.push(sectionRule(theme, width, `$ ${command}`.trim()));
     return;
   }
 
-  out.push(
-    truncateToWidth(sectionRule(theme, width, part.name, "muted"), width),
-  );
+  out.push(sectionRule(theme, width, part.name, "muted"));
   if (preview && preview !== "{}") {
     out.push(truncateToWidth(theme.fg("dim", `  ${preview}`), width));
   }
@@ -217,14 +222,17 @@ export function buildTranscriptLines(
   }
 
   // Live tool executions (present until the ToolEnd lands in the transcript).
+  // Framed exactly like a settled call, so a call does not change shape the
+  // moment it finishes; only the status line underneath differs.
   for (const tool of snap.liveTools) {
     if (out.length > 0) out.push("");
+    renderToolCall(theme, tool, width, out);
     const marker = tool.done
       ? tool.isError
         ? theme.fg("error", "error")
         : theme.fg("success", "done")
       : theme.fg("warning", "running");
-    let line = `${theme.fg("toolTitle", tool.name)} · ${marker}`;
+    let line = `  ${marker}`;
     const preview = tool.outputPreview && sanitizeText(tool.outputPreview);
     if (preview) line += theme.fg("dim", ` · ${preview}`);
     out.push(truncateToWidth(line, width));
