@@ -1,15 +1,7 @@
 /**
- * The fill invariant: a painted line is exactly `width` visible cells AND its
- * background reaches every one of them. The second half is what breaks in
- * practice — content carrying a full `\x1b[0m` reset clears the background
- * too, so a naive `opener + row + reset` drops the fill partway across. These
- * tests assert the re-opening, not just the width.
- *
- * `theme.fg` is NOT that hazard: it closes with the narrow `\x1b[39m` and is
- * harmless. `theme.bg` is: it closes with `\x1b[49m`, which clears the fill
- * for the remainder of the row — nested `theme.bg` spans are not supported
- * inside fillLine. The real source of full resets in these rows is paintIcon
- * (and syntax highlighting), so that is what the row test below paints with.
+ * Tests for the fill invariant: a painted line is exactly `width` visible
+ * cells AND its background reaches every one of them. See paint.ts for which
+ * escape sequences drop a fill and which are harmless.
  *
  * The theme here is a REAL Theme, for the same reason frame.test.ts uses one:
  * a stub whose helpers return their input emits no escape bytes, and escape
@@ -20,6 +12,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { pad } from "./frame.ts";
 import { iconFor, paintIcon } from "./icons.ts";
 import {
   DIFF_ADDED_BG,
@@ -31,6 +24,7 @@ import {
 } from "./paint.ts";
 
 const RESET = "\x1b[0m";
+const BG_CLOSE = "\x1b[49m";
 const BG_OPENER = "\x1b[48;5;237m";
 const bg = (text: string) => `${BG_OPENER}${text}${RESET}`;
 
@@ -60,8 +54,19 @@ test("fillLine re-opens the background after inner resets", () => {
   }
 });
 
+test("fillLine chases consecutive resets", () => {
+  const line = fillLine(`a${RESET}${RESET}b`, 6, BG_OPENER);
+  assert.equal(visibleWidth(line), 6);
+  assert.ok(line.includes(`${RESET}${BG_OPENER}${RESET}${BG_OPENER}`));
+});
+
 test("fillLine without an opener is plain padding", () => {
   assert.equal(fillLine("abc", 6, ""), "abc   ");
+});
+
+test("fillLine handles the empty and zero-width edges", () => {
+  assert.equal(visibleWidth(fillLine("", 6, BG_OPENER)), 6);
+  assert.equal(fillLine("abc", 0, BG_OPENER), pad("abc", 0));
 });
 
 test("fillLine truncates overlong rows to exactly width", () => {
@@ -109,6 +114,15 @@ test("the test theme really does emit background escape sequences", () => {
   const painted = theme.bg("selectedBg", "x");
   assert.ok(painted.length > 1, "theme produced no ANSI escapes");
   assert.equal(visibleWidth(painted), 1);
+  // The premise the chasing rests on: theme.bg closes narrowly, not with \x1b[0m.
+  assert.ok(painted.endsWith(BG_CLOSE));
+});
+
+test("fillLine holds the fill across a nested theme.bg span", () => {
+  const row = `a${theme.bg("searchMatchBg", "X")}b`;
+  const line = fillLine(row, 8, BG_OPENER);
+  assert.equal(visibleWidth(line), 8);
+  assert.ok(line.includes(`${BG_CLOSE}${BG_OPENER}`));
 });
 
 test("paintSelected fills the row with the theme's selection background", () => {
@@ -130,4 +144,21 @@ test("paintSelected holds the background across an icon's full reset", () => {
   assert.equal(line.split(opener).length - 1, 2);
   // The theme's own narrow fg reset needs no chasing, and gets none.
   assert.ok(!line.includes(`\x1b[39m${opener}`));
+});
+
+test("a diff fill nested inside paintSelected keeps both backgrounds", () => {
+  const opener = openerOf((t) => theme.bg("selectedBg", t));
+  const inner = 40;
+  const prefix = "  12 + ";
+  const code = `const${RESET} x`;
+  const line = paintSelected(
+    prefix +
+      fillLine(code, inner - visibleWidth(prefix), rgbBgOpener(DIFF_ADDED_BG)),
+    inner,
+    theme,
+  );
+
+  assert.equal(visibleWidth(line), inner);
+  // The inner fill's own closing reset is chased by the selection opener.
+  assert.ok(line.includes(`${RESET}${opener}`));
 });
