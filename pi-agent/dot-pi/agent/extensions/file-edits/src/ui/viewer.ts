@@ -93,10 +93,15 @@ function marker(kind: DiffLine["kind"]) {
   return " ";
 }
 
+/** The tint openers, named once so tests assert against these rather than
+ * against a hand-copied escape sequence. */
+export const ADDED_OPENER = rgbBgOpener(DIFF_ADDED_BG);
+export const REMOVED_OPENER = rgbBgOpener(DIFF_REMOVED_BG);
+
 /** The background a line sits on: none for context, a tint for a change. */
 function tintOpener(kind: DiffLine["kind"]): string {
-  if (kind === "add") return rgbBgOpener(DIFF_ADDED_BG);
-  if (kind === "remove") return rgbBgOpener(DIFF_REMOVED_BG);
+  if (kind === "add") return ADDED_OPENER;
+  if (kind === "remove") return REMOVED_OPENER;
   return "";
 }
 
@@ -105,13 +110,12 @@ function tintOpener(kind: DiffLine["kind"]): string {
  * naturally re-highlights and a scroll never does. */
 const highlightCache = new WeakMap<FileChange, Map<DiffLine, string>>();
 
-export function highlightForChange(
-  change: FileChange,
-  path: string,
-): Map<DiffLine, string> {
+export function highlightForChange(change: FileChange): Map<DiffLine, string> {
   const cached = highlightCache.get(change);
   if (cached) return cached;
-  const language = languageForPath(path);
+  // The path comes off the change itself: the cache keys on the change alone,
+  // so a caller-supplied path could disagree with it and win for good.
+  const language = languageForPath(change.path);
   const map = new Map<DiffLine, string>();
   for (const hunk of change.hunks) {
     const lines = highlightBlock(
@@ -122,6 +126,39 @@ export function highlightForChange(
   }
   highlightCache.set(change, map);
   return map;
+}
+
+/**
+ * The code half of a line: syntax-highlighted, or — when the line has a
+ * counterpart — painted flat with the words that differ inverted.
+ */
+export function codeBody(
+  theme: Theme,
+  line: DiffLine,
+  counterpart: string | undefined,
+  highlighted: string,
+): string {
+  const color = lineColor(line.kind);
+  if (counterpart === undefined || line.kind === "context") {
+    // highlightBlock hands back the input unchanged when the language is
+    // unknown or the theme has no colours; fall back to a flat diff colour
+    // rather than emitting an uncoloured row.
+    return highlighted === line.text ? theme.fg(color, line.text) : highlighted;
+  }
+  // Syntax highlighting is intentionally skipped on these lines: the word
+  // spans are offsets into the raw text, and they cannot be mapped onto an
+  // already-ANSI-coloured string.
+  const spans =
+    line.kind === "remove"
+      ? wordSpans(line.text, counterpart).removed
+      : wordSpans(counterpart, line.text).added;
+  return spans
+    .map((span) =>
+      span.changed
+        ? theme.inverse(theme.fg(color, span.text))
+        : theme.fg(color, span.text),
+    )
+    .join("");
 }
 
 export class DiffViewer implements Component {
@@ -214,37 +251,15 @@ export class DiffViewer implements Component {
   }
 
   /**
-   * The code half of a line: syntax-highlighted, or — when the line has a
-   * counterpart — painted flat with the words that differ inverted.
+   * The code half of a line, delegated to the module-level codeBody so the
+   * choice between highlighted and flat is testable without a viewer.
    */
   private paint(
     line: DiffLine,
     counterpart: string | undefined,
     highlighted: string,
   ): string {
-    const color = lineColor(line.kind);
-    if (counterpart === undefined || line.kind === "context") {
-      // highlightBlock hands back the input unchanged when the language is
-      // unknown or the theme has no colours; fall back to a flat diff colour
-      // rather than emitting an uncoloured row.
-      return highlighted === line.text
-        ? this.theme.fg(color, line.text)
-        : highlighted;
-    }
-    // Syntax highlighting is intentionally skipped on these lines: the word
-    // spans are offsets into the raw text, and they cannot be mapped onto an
-    // already-ANSI-coloured string.
-    const spans =
-      line.kind === "remove"
-        ? wordSpans(line.text, counterpart).removed
-        : wordSpans(counterpart, line.text).added;
-    return spans
-      .map((span) =>
-        span.changed
-          ? this.theme.inverse(this.theme.fg(color, span.text))
-          : this.theme.fg(color, span.text),
-      )
-      .join("");
+    return codeBody(this.theme, line, counterpart, highlighted);
   }
 
   /**
@@ -280,7 +295,7 @@ export class DiffViewer implements Component {
       counterparts.set(row.left, row.right.text);
       counterparts.set(row.right, row.left.text);
     }
-    const highlights = highlightForChange(change, this.path);
+    const highlights = highlightForChange(change);
     change.hunks.forEach((hunk, index) => {
       if (index > 0) lines.push(this.theme.fg("dim", "─".repeat(width)));
       for (const line of hunk.lines) {
@@ -299,7 +314,7 @@ export class DiffViewer implements Component {
 
   private splitLines(change: FileChange, width: number): string[] {
     const pane = Math.floor((width - 1) / 2);
-    const highlights = highlightForChange(change, this.path);
+    const highlights = highlightForChange(change);
     const cell = (line: DiffLine | undefined, counterpart: string | undefined) => {
       if (!line) return " ".repeat(pane);
       const prefix =

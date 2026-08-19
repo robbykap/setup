@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Theme } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
-import type { FileChange } from "../domain.ts";
+import type { DiffLine, FileChange } from "../domain.ts";
 import { createFileEditStore } from "../store.ts";
 import {
+  ADDED_OPENER,
+  codeBody,
   DiffViewer,
   emptyBodyMessage,
   highlightForChange,
   needsHunkResolution,
+  REMOVED_OPENER,
+  type ViewMode,
 } from "./viewer.ts";
 
 function change(overrides: Partial<FileChange> = {}): FileChange {
@@ -81,7 +85,7 @@ const MULTI_HUNK = change({
 });
 
 test("every hunk line gets a highlight entry", () => {
-  const map = highlightForChange(MULTI_HUNK, MULTI_HUNK.path);
+  const map = highlightForChange(MULTI_HUNK);
   const lines = MULTI_HUNK.hunks.flatMap((hunk) => hunk.lines);
   assert.equal(map.size, lines.length);
   for (const line of lines) {
@@ -92,10 +96,7 @@ test("every hunk line gets a highlight entry", () => {
 });
 
 test("a second look at the same change reuses the cached map", () => {
-  assert.equal(
-    highlightForChange(MULTI_HUNK, MULTI_HUNK.path),
-    highlightForChange(MULTI_HUNK, MULTI_HUNK.path),
-  );
+  assert.equal(highlightForChange(MULTI_HUNK), highlightForChange(MULTI_HUNK));
 });
 
 test("resolveHunks replaces the change, so the highlights are rebuilt", () => {
@@ -113,7 +114,7 @@ test("resolveHunks replaces the change, so the highlights are rebuilt", () => {
     at: 0,
   });
   const before = store.get("src/a.ts")!;
-  const first = highlightForChange(before, before.path);
+  const first = highlightForChange(before);
 
   store.resolveHunks("src/a.ts", {
     hunks: MULTI_HUNK.hunks,
@@ -122,7 +123,7 @@ test("resolveHunks replaces the change, so the highlights are rebuilt", () => {
   });
   const after = store.get("src/a.ts")!;
   assert.notEqual(after, before, "resolveHunks must replace the object");
-  assert.notEqual(highlightForChange(after, after.path), first);
+  assert.notEqual(highlightForChange(after), first);
 });
 
 // --- the tint ---------------------------------------------------------------
@@ -156,9 +157,8 @@ const theme = new Theme(
   "truecolor",
 );
 const keybindings = getKeybindings() as never;
-const ADDED_TINT = "\x1b[48;2;40;52;46m";
 
-function renderAt(width: number, mode: "stacked" | "split"): string[] {
+function renderAt(width: number, mode: ViewMode): string[] {
   const store = createFileEditStore();
   store.record({
     path: "src/a.ts",
@@ -179,16 +179,98 @@ function renderAt(width: number, mode: "stacked" | "split"): string[] {
     ["src/a.ts"],
     () => {},
   );
-  return viewer.render(width);
+  const lines = viewer.render(width);
+  if (mode === "split") {
+    // Below MIN_SPLIT_WIDTH the viewer renders stacked and says so, which
+    // would make every split case a second stacked case in disguise.
+    assert.ok(
+      !lines.some((line) => line.includes("too narrow")),
+      `split fell back to stacked at width ${width}`,
+    );
+  }
+  return lines;
+}
+
+/**
+ * Split needs a width it can actually split at: below MIN_SPLIT_WIDTH the
+ * viewer renders stacked, so a split case at 60 would have tested stacked
+ * twice and called it coverage.
+ */
+const WIDTHS: Record<ViewMode, readonly number[]> = {
+  stacked: [100, 60],
+  split: [100, 92],
+};
+
+const stripAnsi = (line: string) => line.replaceAll(/\x1b\[[0-9;]*m/g, "");
+
+/** The one rendered row whose visible text matches — rows are identified by
+ * what a reader would see, because the escapes are the thing under test. */
+function row(lines: string[], pattern: RegExp): string {
+  const found = lines.filter((line) => pattern.test(stripAnsi(line)));
+  assert.equal(found.length, 1, `expected one row matching ${pattern}`);
+  return found[0]!;
 }
 
 for (const mode of ["stacked", "split"] as const) {
-  for (const width of [100, 60]) {
+  for (const width of WIDTHS[mode]) {
     test(`${mode}@${width}: added lines carry the tint at exact width`, () => {
       const lines = renderAt(width, mode);
-      const tinted = lines.filter((line) => line.includes(ADDED_TINT));
+      const tinted = lines.filter((line) => line.includes(ADDED_OPENER));
       assert.ok(tinted.length > 0, "no added line carried the tint");
       for (const line of tinted) assert.equal(visibleWidth(line), width);
     });
+
+    test(`${mode}@${width}: each tint lands on its own kind of line`, () => {
+      const lines = renderAt(width, mode);
+      // In stacked the marker names the kind; in split the pane does, and the
+      // paired remove/add share a row — so the lone add and the lone context
+      // row are what each tint gets pinned against.
+      const added =
+        mode === "stacked" ? row(lines, /\+ const b = 3/) : row(lines, /export \{\}/);
+      const removed =
+        mode === "stacked"
+          ? row(lines, /− const b = 2/)
+          : row(lines, /const b = 2/);
+      const context = row(lines, /const a = 1/);
+
+      assert.ok(added.includes(ADDED_OPENER), "add row lost its tint");
+      assert.ok(!added.includes(REMOVED_OPENER), "add row wore the remove tint");
+      assert.ok(removed.includes(REMOVED_OPENER), "remove row lost its tint");
+      assert.ok(
+        !context.includes(ADDED_OPENER) && !context.includes(REMOVED_OPENER),
+        "context row was tinted",
+      );
+    });
   }
 }
+
+// --- the code body ----------------------------------------------------------
+
+/**
+ * Under `node --test` there is no live theme singleton, so highlightBlock
+ * hands every line back unchanged and the highlighted branch of codeBody is
+ * never reached through render(). Feed it a highlighted string directly.
+ */
+const HIGHLIGHTED = "\x1b[38;2;1;2;3mconst\x1b[39m a = 1";
+const CONTEXT: DiffLine = {
+  kind: "context",
+  text: "const a = 1",
+  oldLine: 1,
+  newLine: 1,
+};
+
+test("a highlighted line is passed through, escapes and all", () => {
+  assert.equal(codeBody(theme, CONTEXT, undefined, HIGHLIGHTED), HIGHLIGHTED);
+});
+
+test("a line highlighting declined to touch gets the flat diff colour", () => {
+  const body = codeBody(theme, CONTEXT, undefined, CONTEXT.text);
+  assert.equal(body, theme.fg("toolDiffContext", CONTEXT.text));
+  assert.notEqual(body, CONTEXT.text, "the row would render uncoloured");
+});
+
+test("a context line keeps its highlighting even beside a counterpart", () => {
+  // Only changed lines get intraline spans; a context line never does, so its
+  // highlighting survives.
+  assert.equal(codeBody(theme, CONTEXT, "const a = 2", HIGHLIGHTED), HIGHLIGHTED);
+});
