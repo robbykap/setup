@@ -10,7 +10,12 @@ import {
   visibleWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import type { SubagentSnapshot, TranscriptItem } from "../domain.ts";
+import { sectionRule } from "../../../shared/tui-kit/frame.ts";
+import type {
+  SubagentSnapshot,
+  TranscriptItem,
+  TranscriptPart,
+} from "../domain.ts";
 
 const ANSI_PATTERN =
   // eslint-disable-next-line no-control-regex
@@ -84,13 +89,80 @@ function renderAssistantItem(
         out,
       );
     } else if (part.type === "toolCall") {
-      const preview = part.argsPreview ? sanitizeText(part.argsPreview) : "";
-      const line =
-        theme.fg("muted", "→ ") +
-        theme.fg("toolTitle", part.name) +
-        (preview && preview !== "{}" ? theme.fg("dim", ` ${preview}`) : "");
-      out.push(truncateToWidth(line, width));
+      renderToolCall(theme, part, width, out);
     }
+  }
+}
+
+/**
+ * Tool names that mean "run a shell line". The pi backend forwards whatever
+ * the child registered, and bridges rename the same tool, so match on a small
+ * set of known spellings rather than on one id.
+ */
+const SHELL_TOOLS: ReadonlySet<string> = new Set([
+  "bash",
+  "sh",
+  "shell",
+  "run_command",
+  "execute_command",
+  "terminal",
+]);
+
+/**
+ * The shell line a tool call carries, if it is a shell call at all.
+ * `argsPreview` is the JSON the backend flattened out of the tool arguments
+ * (see backends/pi.ts safeJson), so the command sits under a named field;
+ * when the JSON is unparseable or truncated we fall back to the raw preview
+ * rather than dropping the block's identity.
+ */
+function shellCommandOf(name: string, argsPreview: string): string | undefined {
+  if (!SHELL_TOOLS.has(name.toLowerCase())) return undefined;
+  let command = argsPreview;
+  try {
+    const args: unknown = JSON.parse(argsPreview);
+    if (args && typeof args === "object") {
+      const record = args as Record<string, unknown>;
+      for (const key of ["command", "cmd", "script"]) {
+        if (typeof record[key] === "string") {
+          command = record[key];
+          break;
+        }
+      }
+    }
+  } catch {
+    // Keep the raw preview: a partial line still names the block.
+  }
+  const firstLine = command.split("\n").find((line) => line.trim()) ?? "";
+  return firstLine.trim();
+}
+
+/**
+ * A tool call opens a framed block: a dashed rule labelled with the shell line
+ * for shell tools (accent, because that is the thing worth reading) or with
+ * the tool name for everything else (muted), and the arguments underneath.
+ * The rule's own label truncation keeps it at exactly `width` cells.
+ */
+function renderToolCall(
+  theme: Theme,
+  part: Extract<TranscriptPart, { type: "toolCall" }>,
+  width: number,
+  out: string[],
+) {
+  const preview = part.argsPreview ? sanitizeText(part.argsPreview) : "";
+  const command = shellCommandOf(part.name, preview);
+
+  if (command) {
+    // The command IS the block's content; repeating the raw JSON below it
+    // would only push the transcript around.
+    out.push(truncateToWidth(sectionRule(theme, width, `$ ${command}`), width));
+    return;
+  }
+
+  out.push(
+    truncateToWidth(sectionRule(theme, width, part.name, "muted"), width),
+  );
+  if (preview && preview !== "{}") {
+    out.push(truncateToWidth(theme.fg("dim", `  ${preview}`), width));
   }
 }
 

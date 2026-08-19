@@ -16,6 +16,13 @@ import { Input, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { formatElapsed, type SubagentSnapshot } from "../domain.ts";
 import { formatContextUtilization } from "../format.ts";
 import type { SubagentReadModel } from "../manager.ts";
+import { pad } from "../../../shared/tui-kit/frame.ts";
+import { paintSelected } from "../../../shared/tui-kit/paint.ts";
+import {
+  applyBottomAnchored,
+  clampOffset,
+  scrollActionFor,
+} from "../../../shared/tui-kit/scroll.ts";
 import { buildTranscriptLines } from "./transcript.ts";
 
 function configuredKeys(
@@ -120,7 +127,8 @@ export function reconcileDashboardSelection(
   selection.id = subs[selection.index]?.id;
 }
 
-class SubagentDashboard implements Component {
+/** Exported for the geometry tests, which render the real component. */
+export class SubagentDashboard implements Component {
   private tui: TUI;
   private theme: Theme;
   private keybindings: KeybindingsManager;
@@ -208,11 +216,6 @@ class SubagentDashboard implements Component {
     }
   }
 
-  private pad(text: string, width: number): string {
-    const truncated = truncateToWidth(text, width);
-    return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
-  }
-
   private borderSegment(width: number, title: string): string {
     const theme = this.theme;
     const label = title
@@ -251,10 +254,7 @@ class SubagentDashboard implements Component {
       width - visibleWidth(headerLeft) - visibleWidth(headerRight) - 4,
     );
     lines.push(
-      truncateToWidth(
-        `  ${headerLeft}${" ".repeat(headerPad)}${headerRight}  `,
-        width,
-      ),
+      pad(`  ${headerLeft}${" ".repeat(headerPad)}${headerRight}  `, width),
     );
 
     // Top border with panel title
@@ -267,9 +267,12 @@ class SubagentDashboard implements Component {
 
     // Rows
     const divider = theme.fg("border", "│");
+    // renderRows returns rows already fitted to innerWidth: a selected row
+    // carries a background fill, and re-padding it here would run the escapes
+    // through truncateToWidth a second time.
     const rowLines = this.renderRows(subs, innerWidth, bodyHeight);
     for (let i = 0; i < bodyHeight; i++) {
-      lines.push(divider + this.pad(rowLines[i] ?? "", innerWidth) + divider);
+      lines.push(divider + (rowLines[i] ?? " ".repeat(innerWidth)) + divider);
     }
 
     // Bottom border
@@ -281,7 +284,7 @@ class SubagentDashboard implements Component {
 
     // Hints
     lines.push(
-      truncateToWidth(
+      pad(
         theme.fg(
           "dim",
           `  ${configuredKeys(this.keybindings, "tui.select.up")}/${configuredKeys(this.keybindings, "tui.select.down")}/jk select · ${configuredKeys(this.keybindings, "tui.select.confirm")} take over · x abort · ${configuredKeys(this.keybindings, "tui.select.cancel")} close`,
@@ -339,14 +342,17 @@ class SubagentDashboard implements Component {
       const leftMax = Math.max(0, width - rightWidth - 2);
       const leftTruncated = truncateToWidth(left, leftMax);
       const gap = Math.max(2, width - visibleWidth(leftTruncated) - rightWidth);
-      out.push(truncateToWidth(leftTruncated + " ".repeat(gap) + right, width));
+      // The marker lives inside the painted body, so the fill spans the row
+      // edge to edge; paintSelected pads to `width` itself.
+      const row = leftTruncated + " ".repeat(gap) + right;
+      out.push(isSelected ? paintSelected(row, width, theme) : pad(row, width));
     }
 
     if (start > 0) {
-      out[0] = truncateToWidth(theme.fg("dim", `   ... ${start} more`), width);
+      out[0] = pad(theme.fg("dim", `   ... ${start} more`), width);
     }
     if (start + height < subs.length) {
-      out[out.length - 1] = truncateToWidth(
+      out[out.length - 1] = pad(
         theme.fg("dim", `   ... ${subs.length - start - height} more`),
         width,
       );
@@ -358,8 +364,6 @@ class SubagentDashboard implements Component {
 }
 
 // --- Takeover view ------------------------------------------------------------
-
-const TRANSCRIPT_SCROLL_STEP = 6;
 
 class TakeoverView implements Component, Focusable {
   private tui: TUI;
@@ -461,28 +465,15 @@ class TakeoverView implements Component, Focusable {
       this.close();
       return;
     }
-    if (this.keybindings.matches(data, "tui.editor.cursorUp")) {
-      this.scrollOffset += TRANSCRIPT_SCROLL_STEP;
-      this.tui.requestRender();
-      return;
-    }
-    if (this.keybindings.matches(data, "tui.editor.cursorDown")) {
-      this.scrollOffset = Math.max(
-        0,
-        this.scrollOffset - TRANSCRIPT_SCROLL_STEP,
-      );
-      this.tui.requestRender();
-      return;
-    }
-    if (this.keybindings.matches(data, "tui.editor.pageUp")) {
-      this.scrollOffset += this.viewportHeight();
-      this.tui.requestRender();
-      return;
-    }
-    if (this.keybindings.matches(data, "tui.editor.pageDown")) {
-      this.scrollOffset = Math.max(
-        0,
-        this.scrollOffset - this.viewportHeight(),
+    // vimKeys: false — this view has a message editor, so j/k/g/G and
+    // ctrl-u/ctrl-d must reach the input. Only the four arrow/page
+    // keybindings scroll here; everything else falls through below.
+    const action = scrollActionFor(data, this.keybindings, { vimKeys: false });
+    if (action) {
+      this.scrollOffset = applyBottomAnchored(
+        this.scrollOffset,
+        action,
+        this.viewportHeight(),
       );
       this.tui.requestRender();
       return;
@@ -532,8 +523,16 @@ class TakeoverView implements Component, Focusable {
     const errorRows = snap.errorText ? 1 : 0;
     const scrollRows = this.scrollOffset > 0 ? 1 : 0;
     const transcriptCapacity = Math.max(1, viewport - errorRows - scrollRows);
-    const maxOffset = Math.max(0, transcript.length - transcriptCapacity);
-    if (this.scrollOffset > maxOffset) this.scrollOffset = maxOffset;
+    // The kit asks callers to clamp on store, which we cannot: the maximum
+    // offset depends on the transcript length, and that is only known here.
+    // Clamping here is equivalent because the assignment writes the clamped
+    // value back into this.scrollOffset, and render() always follows the
+    // requestRender that handleInput issued — so the next keypress reads a
+    // real offset rather than one past the end of the transcript.
+    this.scrollOffset = clampOffset(
+      this.scrollOffset,
+      Math.max(0, transcript.length - transcriptCapacity),
+    );
 
     const body: string[] = [];
     if (snap.errorText) {
