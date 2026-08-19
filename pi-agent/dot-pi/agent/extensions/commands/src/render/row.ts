@@ -3,6 +3,10 @@
  * transcript when you are not reading its output. The command, a
  * right-aligned outcome, and a peek at the LAST output line — for a command,
  * the tail is the result, unlike a diff where the head is.
+ *
+ * A failure collapses the same way, just with a deeper peek: the last few
+ * lines instead of one, in plain dim text rather than the built-in's red box.
+ * ctrl+o still expands to the full output.
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -16,12 +20,17 @@ import {
   formatDuration,
   formatLines,
   formatStatus,
-  lastOutputLine,
+  isFailure,
   statusColor,
   statusGlyph,
   summarizeCommand,
 } from "../domain.ts";
-import { oneLine } from "../output.ts";
+import { oneLine, sanitizeText } from "../output.ts";
+
+/** How many trailing lines a row peeks at: one for a success, and two more
+ * for a failure, where the line before the error usually names the cause. */
+const PEEK_LINES = 1;
+const FAILURE_PEEK_LINES = 3;
 
 type Theme = ExtensionContext["ui"]["theme"];
 
@@ -99,15 +108,31 @@ export function renderCollapsedRow(
     theme.fg("dim", "…"),
   );
 
-  const peek = oneLine(lastOutputLine(record.output));
-  if (!peek) return [header];
+  const peek = tailLines(
+    record.output,
+    isFailure(record) ? FAILURE_PEEK_LINES : PEEK_LINES,
+  );
 
   return [
     header,
-    truncateToWidth(
-      `   ${theme.fg("dim", "│")} ${theme.fg("dim", peek)}`,
-      width,
-      theme.fg("dim", "…"),
+    ...peek.map((line) =>
+      truncateToWidth(
+        `   ${theme.fg("dim", "│")} ${theme.fg("dim", line)}`,
+        width,
+        theme.fg("dim", "…"),
+      ),
     ),
   ];
+}
+
+/** The last `count` lines with anything on them, oldest first. Blank lines are
+ * skipped rather than counted: a row of empties is not a peek. */
+function tailLines(output: string, count: number): string[] {
+  const lines = sanitizeText(output).split("\n");
+  const tail: string[] = [];
+  for (let index = lines.length - 1; index >= 0 && tail.length < count; index -= 1) {
+    const line = oneLine(lines[index] ?? "");
+    if (line) tail.unshift(line);
+  }
+  return tail;
 }

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { Theme } from "@earendil-works/pi-coding-agent";
 import { Container, visibleWidth } from "@earendil-works/pi-tui";
 import type { CommandRecord } from "../domain.ts";
 import {
@@ -13,6 +14,37 @@ const theme = {
   fg: (_color: string, text: string) => text,
   bold: (text: string) => text,
 } as never;
+
+/**
+ * A REAL Theme for the one invariant that is about escapes rather than text:
+ * the stub above returns its input, so it could never emit a background fill
+ * whether or not the row asked for one. Built the way picker.test.ts does,
+ * since the live singleton is not exported.
+ */
+const FG_COLORS = [
+  "accent", "border", "borderAccent", "borderMuted", "success", "error",
+  "warning", "muted", "dim", "text", "thinkingText", "searchMatchText",
+  "userMessageText", "customMessageText", "customMessageLabel", "toolTitle",
+  "toolOutput", "mdHeading", "mdLink", "mdLinkUrl", "mdCode", "mdCodeBlock",
+  "mdCodeBlockBorder", "mdQuote", "mdQuoteBorder", "mdHr", "mdListBullet",
+  "toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "syntaxComment",
+  "syntaxKeyword", "syntaxFunction", "syntaxVariable", "syntaxString",
+  "syntaxNumber", "syntaxType", "syntaxOperator", "syntaxPunctuation",
+  "thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium",
+  "thinkingHigh", "thinkingXhigh", "thinkingMax", "bashMode",
+];
+const BG_COLORS = [
+  "selectedBg", "scrollbarThumb", "searchMatchBg", "userMessageBg",
+  "customMessageBg", "toolPendingBg", "toolSuccessBg", "toolErrorBg",
+];
+const fill = (names: string[], hex: string) =>
+  Object.fromEntries(names.map((name) => [name, hex]));
+
+const realTheme = new Theme(
+  fill(FG_COLORS, "#cba6f7") as never,
+  fill(BG_COLORS, "#1e1e2e") as never,
+  "truecolor",
+) as never;
 
 function record(overrides: Partial<CommandRecord> = {}): CommandRecord {
   return {
@@ -112,6 +144,39 @@ test("the component reuses its record until told otherwise", () => {
   assert.deepEqual(row.render(80), []);
   row.update(record(), theme);
   assert.equal(row.render(80).length, 2);
+});
+
+test("a failed record collapses to header plus a plain output tail", () => {
+  const failed = record({
+    status: "failed",
+    exitCode: 1,
+    output: "make: *** [build] Error 1\nsrc/main.c:12: undefined reference\n",
+    outputLines: 2,
+  });
+  const lines = renderCollapsedRow(failed, 80, realTheme);
+  assert.ok(
+    lines.length >= 2 && lines.length <= 4,
+    `expected 2-4 lines, got ${lines.length}`,
+  );
+  // `\x1b[4` opens a background fill (48;…) or an underline: a failure is a
+  // plain row like every other, foreground colours only.
+  for (const line of lines) assert.ok(!line.includes("\x1b[4"), line);
+});
+
+test("a failure shows more of its tail than a success does", () => {
+  const output = "one\ntwo\nthree\nfour";
+  const ok = renderCollapsedRow(record({ output, outputLines: 4 }), 80, theme);
+  const failed = renderCollapsedRow(
+    record({ output, outputLines: 4, status: "failed", exitCode: 2 }),
+    80,
+    theme,
+  );
+  assert.equal(ok.length, 2);
+  assert.equal(failed.length, 4);
+  assert.deepEqual(
+    failed.slice(1).map((line) => line.trim()),
+    ["│ two", "│ three", "│ four"],
+  );
 });
 
 test("delegation hides our components from the built-in renderer", () => {

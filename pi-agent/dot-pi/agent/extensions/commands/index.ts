@@ -3,9 +3,10 @@
  *
  * The built-in bash tool is re-registered under the same name so its
  * transcript row collapses to two lines: the command, its outcome, and a peek
- * at the last line it printed. Execution is delegated to the SDK's own
- * implementation, so shell semantics are untouched; only the renderers and a
- * store subscription are ours.
+ * at the last line it printed. A failure collapses too, with a few more tail
+ * lines instead of the built-in's coloured box. Execution is delegated to the
+ * SDK's own implementation, so shell semantics are untouched; only the
+ * renderers and a store subscription are ours.
  *
  * Both render slots have to be ours. The built-in puts the command in
  * renderCall and the whole output block in renderResult, so overriding one
@@ -116,13 +117,13 @@ export default function (pi: ExtensionAPI) {
         return noCall();
       },
       renderResult(result, options, theme, context) {
-        // A failure must never be collapsed: that output is exactly what the
-        // user needs. Same for an expanded row — ctrl+o still works. A
-        // partial result is a command still streaming, which the built-in
-        // renders live.
+        // Failures collapse like everything else — the row's deeper tail peek
+        // carries the signal, and ctrl+o expands to the built-in's full
+        // output. An expanded row is that ctrl+o. A partial result is a
+        // command still streaming, which the built-in renders live.
         const record = calls.get(context.toolCallId);
         const expanded = options.expanded || context.expanded;
-        if (context.isError || expanded || options.isPartial || !record) {
+        if (expanded || options.isPartial || !record) {
           return baseBash.renderResult!(
             result,
             options,
