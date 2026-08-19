@@ -25,8 +25,7 @@ import type {
   ExtensionUIContext,
 } from "@earendil-works/pi-coding-agent";
 import { createBashToolDefinition } from "@earendil-works/pi-coding-agent";
-import { UI_ICONS } from "../shared/tui-kit/icons.ts";
-import { statusSegment, type StatusTail } from "../shared/tui-kit/status.ts";
+import { formatCommandsStatus } from "./src/status.ts";
 import type { CommandRecord } from "./src/domain.ts";
 import { observeCommandChannel } from "./src/observe.ts";
 import { createCallRecords, executeBashAndRecord } from "./src/record.ts";
@@ -54,23 +53,7 @@ export default function (pi: ExtensionAPI) {
   const updateStatus = () => {
     if (!ui) return;
     try {
-      const { commands, failed } = store.totals();
-      if (commands === 0) {
-        ui.setStatus(STATUS_KEY, undefined);
-        return;
-      }
-      const tails: StatusTail[] =
-        failed > 0 ? [{ text: `${failed}✗`, kind: "error" }] : [];
-      ui.setStatus(
-        STATUS_KEY,
-        statusSegment(
-          ui.theme,
-          UI_ICONS.terminal,
-          commands,
-          `cmd${commands === 1 ? "" : "s"}`,
-          tails,
-        ),
-      );
+      ui.setStatus(STATUS_KEY, formatCommandsStatus(ui.theme, store.totals()));
     } catch {
       // UI unavailable in print/RPC modes or during teardown.
     }

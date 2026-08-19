@@ -52,8 +52,7 @@ import {
   runTool,
   type TerminalRuntime,
 } from "./src/runtime.ts";
-import { UI_ICONS } from "../shared/tui-kit/icons.ts";
-import { statusSegment } from "../shared/tui-kit/status.ts";
+import { formatTerminalsStatus } from "./src/status.ts";
 import { sanitizeText } from "./src/ui/output-view.ts";
 import { openTerminalPicker } from "./src/ui/ps.ts";
 
@@ -83,9 +82,9 @@ export default function (pi: ExtensionAPI) {
     return managerPromise;
   };
 
-  /** Status segment on the shared line directly above the editor: a clock and
-   * the running count while ≥1 runs, a check and the tracked count once they
-   * have all settled.
+  /** Status segment on the shared line directly above the editor: always the
+   * tracked count, with the running ones as a tail and the clock/check icon
+   * marking whether any are still going.
    * Called on every manager notification (including per-output-chunk), so it
    * only touches setStatus when those counts actually change — publishing
    * status updates hundreds of times a second would be wasteful for no
@@ -94,28 +93,16 @@ export default function (pi: ExtensionAPI) {
   const updateStatus = (manager: TerminalManagerShape) => {
     if (!ui) return;
     try {
-      const terminals = manager.view.list();
-      const running = terminals.filter(
-        (snap) => snap.status === "running",
-      ).length;
-      const key = `${running}/${terminals.length}`;
+      const list = manager.view.list();
+      const counts = {
+        terminals: list.length,
+        running: list.filter((snap) => snap.status === "running").length,
+      };
+      const key = `${counts.running}/${counts.terminals}`;
       if (key === statusCounts) return;
       statusCounts = key;
-      if (terminals.length === 0) {
-        ui.setStatus(STATUS_KEY, undefined);
-        return;
-      }
-      const count = running > 0 ? running : terminals.length;
       // Joins the shared line above the editor rather than owning a row.
-      ui.setStatus(
-        STATUS_KEY,
-        statusSegment(
-          ui.theme,
-          running > 0 ? UI_ICONS.clock : UI_ICONS.check,
-          count,
-          "terminal" + (count === 1 ? "" : "s"),
-        ),
-      );
+      ui.setStatus(STATUS_KEY, formatTerminalsStatus(ui.theme, counts));
     } catch {
       // UI may be unavailable (print/RPC modes or teardown).
     }
