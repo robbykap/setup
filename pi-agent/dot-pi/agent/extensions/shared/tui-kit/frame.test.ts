@@ -1,26 +1,19 @@
 /**
- * Overlay geometry. These exist because the first version of both overlays
- * shipped with lines that were 2 cells too wide, 1 cell too narrow, and a
- * header that collapsed to its content width — which made the panels look
- * shattered even though every unit test passed.
+ * Overlay geometry primitives. These exist because the first version of the
+ * file-edits overlays shipped with lines that were 2 cells too wide, 1 cell
+ * too narrow, and a header that collapsed to its content width — which made
+ * the panels look shattered even though every unit test passed.
  *
- * The invariants, matching /ps and /subagents:
- *   - every rendered line is exactly `width` VISIBLE cells
- *   - the panel is a fixed rectangle of `terminal rows - 1` lines, whatever
- *     the content
+ * The invariant every primitive here upholds: whatever it returns is exactly
+ * `width` VISIBLE cells. Tests that render a whole extension overlay live with
+ * that extension (see file-edits/src/ui/geometry.test.ts); this file must not
+ * import from any extension.
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Theme } from "@earendil-works/pi-coding-agent";
-import { getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
-import { parseUnifiedPatch } from "../../file-edits/src/diff.ts";
-import {
-  createFileEditStore,
-  type FileEditStore,
-} from "../../file-edits/src/store.ts";
-import { FilePicker } from "../../file-edits/src/ui/picker.ts";
-import { DiffViewer } from "../../file-edits/src/ui/viewer.ts";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { bodyHeight, bodyRow, pad, sectionRule, topBorder } from "./frame.ts";
 
 /**
@@ -60,51 +53,7 @@ test("the test theme really does emit escape sequences", () => {
   assert.equal(visibleWidth(painted), 1);
 });
 
-/**
- * A real KeybindingsManager, but cast: pi-tui and pi-coding-agent each expose
- * a KeybindingsManager type, and depending on where the extension is checked
- * from (repo vs installed under ~/.pi/agent) they resolve to two different
- * declarations of the same runtime class. The components want the agent's one.
- */
-const keybindings = getKeybindings() as never;
 const ROWS = 30;
-/** The whole overlay is terminal rows - 1, leaving pi's footer visible. */
-const EXPECTED_LINES = ROWS - 1;
-
-function stubTui(columns = 100) {
-  return { requestRender() {}, terminal: { rows: ROWS, columns } } as never;
-}
-
-const PATCH = parseUnifiedPatch(
-  `@@ -37,4 +37,5 @@\n const ranked = rank(candidates)\n-return ranked[0]\n+const model = pickModel(ranked, effort)\n+if (!model) throw new NoModelError(effort)\n ok\n`,
-)!;
-
-function storeWith(count: number): FileEditStore {
-  const store = createFileEditStore();
-  const now = Date.now();
-  for (let index = 0; index < count; index += 1) {
-    store.record({
-      path: `src/file${index}.ts`,
-      hunks: PATCH.hunks,
-      added: 12,
-      removed: 4,
-      isNew: false,
-      origin: { kind: "self" },
-      at: now - index * 1000,
-    });
-  }
-  return store;
-}
-
-function assertExact(lines: string[], width: number, label: string) {
-  lines.forEach((line, index) => {
-    assert.equal(
-      visibleWidth(line),
-      width,
-      `${label}: line ${index} is ${visibleWidth(line)} cells, want ${width}\n${JSON.stringify(line)}`,
-    );
-  });
-}
 
 // --- the primitives ---------------------------------------------------------
 
@@ -143,115 +92,4 @@ test("the body leaves exactly one row for pi's footer", () => {
   assert.equal(bodyHeight(ROWS, 4) + 4, ROWS - 1);
   // Tiny terminals still get a usable panel rather than a negative height.
   assert.ok(bodyHeight(5, 4) >= 6);
-});
-
-// --- the picker -------------------------------------------------------------
-
-for (const width of [100, 90, 72, 60]) {
-  test(`picker renders exact-width lines at ${width}`, () => {
-    const picker = new FilePicker(
-      stubTui(width),
-      theme,
-      keybindings,
-      storeWith(3),
-      { query: "", index: 0 },
-      () => {},
-    );
-    const lines = picker.render(width);
-    assertExact(lines, width, `picker@${width}`);
-    assert.equal(lines.length, EXPECTED_LINES);
-  });
-}
-
-test("the picker is the same rectangle whatever the file count", () => {
-  for (const count of [0, 1, 3, 40]) {
-    const picker = new FilePicker(
-      stubTui(),
-      theme,
-      keybindings,
-      storeWith(count),
-      { query: "", index: 0 },
-      () => {},
-    );
-    const lines = picker.render(100);
-    assert.equal(lines.length, EXPECTED_LINES, `${count} files`);
-    assertExact(lines, 100, `picker with ${count} files`);
-  }
-});
-
-test("a filter matching nothing still fills the rectangle", () => {
-  const picker = new FilePicker(
-    stubTui(),
-    theme,
-    keybindings,
-    storeWith(3),
-    { query: "zzzzzzz", index: 0 },
-    () => {},
-  );
-  const lines = picker.render(100);
-  assert.equal(lines.length, EXPECTED_LINES);
-  assertExact(lines, 100, "picker with no matches");
-});
-
-// --- the viewer -------------------------------------------------------------
-
-for (const width of [100, 90, 72, 60]) {
-  for (const mode of ["stacked", "split"] as const) {
-    test(`viewer ${mode} renders exact-width lines at ${width}`, () => {
-      const store = storeWith(2);
-      const viewer = new DiffViewer(
-        stubTui(width),
-        theme,
-        keybindings,
-        store,
-        "src/file0.ts",
-        { mode },
-        ["src/file0.ts", "src/file1.ts"],
-        () => {},
-      );
-      const lines = viewer.render(width);
-      assertExact(lines, width, `viewer ${mode}@${width}`);
-      assert.equal(lines.length, EXPECTED_LINES);
-    });
-  }
-}
-
-test("a file with no diff yet still fills the rectangle", () => {
-  const store = createFileEditStore();
-  store.recordExternal({
-    path: "docs/x.md",
-    origin: { kind: "subagent", id: "sa-2", name: "sa-2" },
-    at: Date.now(),
-  });
-  const viewer = new DiffViewer(
-    stubTui(),
-    theme,
-    keybindings,
-    store,
-    "docs/x.md",
-    { mode: "stacked" },
-    ["docs/x.md"],
-    () => {},
-  );
-  const lines = viewer.render(100);
-  assert.equal(lines.length, EXPECTED_LINES);
-  assertExact(lines, 100, "viewer pending");
-});
-
-test("scrolling to the bottom keeps the rectangle intact", () => {
-  const store = storeWith(1);
-  const viewer = new DiffViewer(
-    stubTui(),
-    theme,
-    keybindings,
-    store,
-    "src/file0.ts",
-    { mode: "stacked" },
-    ["src/file0.ts"],
-    () => {},
-  );
-  for (let index = 0; index < 100; index += 1) viewer.handleInput("j");
-  const lines = viewer.render(100);
-  assert.equal(lines.length, EXPECTED_LINES);
-  assertExact(lines, 100, "viewer scrolled to the end");
 });
