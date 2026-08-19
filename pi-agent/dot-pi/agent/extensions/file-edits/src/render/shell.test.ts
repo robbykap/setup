@@ -41,8 +41,7 @@ function registeredTools() {
 
 const tools = registeredTools();
 
-/** A settled failure: args complete, a result that is an error, not partial. */
-function renderSettledError(name: "edit" | "write", args: unknown): string[] {
+function toolRow(name: "edit" | "write", args: unknown) {
   const component = new ToolExecutionComponent(
     name,
     `call-${name}`,
@@ -53,8 +52,25 @@ function renderSettledError(name: "edit" | "write", args: unknown): string[] {
     CWD,
   );
   component.setArgsComplete();
+  return component;
+}
+
+/** A settled failure: args complete, a result that is an error, not partial. */
+function renderSettledError(name: "edit" | "write", args: unknown): string[] {
+  const component = toolRow(name, args);
   component.updateResult(
     { content: [{ type: "text", text: "Could not edit file: a.ts." }], isError: true },
+    false,
+  );
+  return component.render(60);
+}
+
+/** The same call, settled and successful, with ctrl+o pressed. */
+function renderExpandedSuccess(name: "edit" | "write", args: unknown): string[] {
+  const component = toolRow(name, args);
+  component.setExpanded(true);
+  component.updateResult(
+    { content: [{ type: "text", text: "Successfully wrote 6 bytes to a.ts" }], isError: false },
     false,
   );
   return component.render(60);
@@ -74,6 +90,16 @@ for (const name of ["edit", "write"] as const) {
     }
   });
 }
+
+test("write: expanded gets the box back", () => {
+  // "self" took pi's shell Box away so collapsed rows stay plain; expanded is
+  // the built-in's own view, which draws flush-left without one.
+  const lines = renderExpandedSuccess("write", ARGS.write);
+  assert.ok(
+    lines.some((line) => line.includes("\x1b[48")),
+    JSON.stringify(lines),
+  );
+});
 
 test("edit and write collapse to the same lines", () => {
   // Same rows, same shell: the only difference left is the path each one

@@ -45,6 +45,7 @@ import {
   CollapsedRow,
   EmptyRow,
   NoteRow,
+  boxedDelegation,
   delegationContext,
 } from "./src/render/row.ts";
 import { browseChangedFiles } from "./src/ui/picker.ts";
@@ -107,6 +108,17 @@ export default function (pi: ExtensionAPI) {
   /** renderCall draws the whole row when collapsed, so the result slot has
    * nothing left to add. An empty container renders no lines. */
   const noResult = () => new EmptyRow();
+
+  /** The background pi's default shell would have painted for this state
+   * (tool-execution.js:213-219). Ours to paint now that write frames itself. */
+  const shellBg = (
+    theme: Theme,
+    context: { isPartial: boolean; isError: boolean },
+  ) => {
+    if (context.isPartial) return (text: string) => theme.bg("toolPendingBg", text);
+    if (context.isError) return (text: string) => theme.bg("toolErrorBg", text);
+    return (text: string) => theme.bg("toolSuccessBg", text);
+  };
 
   pi.on("session_start", (_event, ctx: ExtensionContext) => {
     ui = ctx.mode === "tui" ? ctx.ui : undefined;
@@ -202,7 +214,10 @@ export default function (pi: ExtensionAPI) {
       // not, so without it ToolExecutionComponent paints its own colored Box
       // around our plain rows (tool-execution.js:50) — a red block behind a
       // collapsed failure. "self" hands the framing to us, as it already does
-      // for edit; the rows draw their own leading spacing either way.
+      // for edit; the rows draw their own leading spacing either way. Unlike
+      // edit, whose call component is its own Box, the built-in write
+      // renderers want that shell back when expanded — boxedDelegation below
+      // is where they get it.
       renderShell: "self",
       async execute(toolCallId, params, signal, onUpdate, executeCtx) {
         return executeAndRecord({
@@ -218,8 +233,13 @@ export default function (pi: ExtensionAPI) {
       },
       renderCall(args, theme, context) {
         const change = calls.get(context.toolCallId);
+        // Expanded is the built-in's view, and the built-in expects the shell
+        // Box that "self" took away — so it gets one of ours, with the padding
+        // and background pi would have used.
         if (context.expanded) {
-          return baseWrite.renderCall!(args, theme, delegationContext(context));
+          return boxedDelegation(context, 1, shellBg(theme, context), (ctx) =>
+            baseWrite.renderCall!(args, theme, ctx),
+          );
         }
         if (change) return collapsedRow(context.lastComponent, change, theme);
         const failed = context.isError
@@ -248,7 +268,15 @@ export default function (pi: ExtensionAPI) {
             theme,
           );
         }
-        if (expanded || options.isPartial || !change) {
+        // The result slot only draws on an error, and edit keeps that text
+        // outside its own Box but indented (edit.js:283) — so this one is
+        // padding without a background, matching it.
+        if (expanded) {
+          return boxedDelegation(context, 0, undefined, (ctx) =>
+            baseWrite.renderResult!(result, options, theme, ctx),
+          );
+        }
+        if (options.isPartial || !change) {
           return baseWrite.renderResult!(
             result,
             options,
