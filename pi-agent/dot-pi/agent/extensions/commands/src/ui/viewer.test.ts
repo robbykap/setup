@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Theme } from "@earendil-works/pi-coding-agent";
-import { getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
+import {
+  getKeybindings,
+  truncateToWidth,
+  visibleWidth,
+} from "@earendil-works/pi-tui";
 import type { CommandRecord } from "../domain.ts";
 import { formatStatus, statusColor } from "../domain.ts";
 import { createCommandStore } from "../store.ts";
@@ -151,12 +155,12 @@ test("the result rule is painted with the status colour", () => {
 
 // --- the component -----------------------------------------------------------
 
-function viewerFor(overrides: Partial<CommandRecord> = {}) {
+function viewerFor(overrides: Partial<CommandRecord> = {}, rows = 30) {
   const store = createCommandStore();
   const entry = record(overrides);
   store.record(entry);
   return new CommandViewer(
-    { requestRender() {}, terminal: { rows: 30, columns: 100 } } as never,
+    { requestRender() {}, terminal: { rows, columns: 100 } } as never,
     theme,
     keybindings,
     store,
@@ -235,7 +239,42 @@ test("the legend fits an 80-column terminal", () => {
   assert.ok(visibleWidth(stripAnsi(legend).trimEnd()) <= 80, legend);
 });
 
-test("`k` after `G` steps one line up, not out of the sentinel", () => {
+test("a copy receipt is on screen at 80 columns", async () => {
+  // The receipt answers a question the reader just asked; the scroll hints are
+  // on screen every other moment. At 80 cells only one of them fits.
+  const viewer = viewerFor({ fullOutputPath: "/tmp/spill.log" });
+  viewer.copier = () => {
+    throw new Error("no clipboard here");
+  };
+  viewer.handleInput("Y");
+  await new Promise((resolve) => setImmediate(resolve));
+  const legend = viewer.render(100).at(-2)!;
+  assert.ok(
+    stripAnsi(truncateToWidth(legend, 80)).includes("failed to copy output"),
+    `the receipt fell off an 80-column terminal:\n${stripAnsi(legend)}`,
+  );
+});
+
+test("the overlay is one row shorter than the terminal", () => {
+  for (const rows of [24, 30]) {
+    assert.equal(viewerFor({}, rows).render(100).length, rows - 1, `rows=${rows}`);
+  }
+});
+
+test("`f` puts the viewport back at the tail", () => {
+  const output = Array.from({ length: 200 }, (_, i) => `line ${i}`).join("\n");
+  const viewer = viewerFor({ output, outputLines: 200 });
+  const tail = viewer.render(100);
+  viewer.handleInput("g");
+  const top = viewer.render(100);
+  assert.notDeepEqual(top, tail, "g did not scroll");
+  // The two views show different text; an offset carried across the toggle
+  // would land somewhere in the middle of it.
+  viewer.handleInput("f");
+  assert.deepEqual(viewer.render(100), tail);
+});
+
+test("`j` after `g` steps one line down, not out of the sentinel", () => {
   // g stores MAX_SAFE_INTEGER; only render() knows the real maximum, so it has
   // to write the clamped offset back before the next key reads it.
   const output = Array.from({ length: 200 }, (_, i) => `line ${i}`).join("\n");

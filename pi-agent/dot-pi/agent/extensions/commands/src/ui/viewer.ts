@@ -54,7 +54,7 @@ export function buildBody(
   theme: Theme,
   width: number,
 ): string[] {
-  const label = oneLine(record.command).slice(0, RULE_LABEL_WIDTH);
+  const label = truncateToWidth(oneLine(record.command), RULE_LABEL_WIDTH);
   const lines = [sectionRule(theme, width, `$ ${label}`)];
 
   // The command gets its own lines, all of them: a script pasted into bash is
@@ -250,7 +250,7 @@ export class CommandViewer implements Component {
 
   private viewportHeight(): number {
     const rows = this.tui.terminal.rows || 30;
-    // viewport + 6 chrome rows (three borders, the header, the legend) keeps
+    // viewport + 6 chrome rows (four borders, the header, the legend) keeps
     // the overlay at terminal rows - 1.
     return Math.max(6, rows - 7);
   }
@@ -324,17 +324,19 @@ export class CommandViewer implements Component {
     lines.push(...body.slice(0, viewport));
 
     lines.push(border);
-    lines.push(
-      truncateToWidth(
-        theme.fg(
-          "dim",
-          // Short enough to fit an 80-column terminal, so the close key — the
-          // way out — is never the part that falls off the end.
-          `${configuredKeys(this.keybindings, "tui.select.cancel")} back · n/p prev/next · ${record.fullOutputPath ? "f full · " : ""}j/k ^d/^u g/G scroll · y/Y copy${this.copyNote ? ` · ${this.copyNote}` : ""}`,
-        ),
-        width,
-      ),
-    );
+    // Short enough to fit an 80-column terminal, so the close key — the way
+    // out — is never the part that falls off the end. A copy receipt is the
+    // one thing that outranks the scroll hints: it answers a question the
+    // reader just asked, and the hints are on screen every other moment.
+    const segments = [
+      `${configuredKeys(this.keybindings, "tui.select.cancel")} back`,
+      "n/p prev/next",
+      ...(record.fullOutputPath ? ["f full"] : []),
+      ...(this.copyNote ? [] : ["j/k ^d/^u g/G scroll"]),
+      "y/Y copy",
+      ...(this.copyNote ? [this.copyNote] : []),
+    ];
+    lines.push(truncateToWidth(theme.fg("dim", segments.join(" · ")), width));
     lines.push(border);
     return lines;
   }
