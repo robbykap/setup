@@ -16,8 +16,12 @@ import { Input, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { formatElapsed, type SubagentSnapshot } from "../domain.ts";
 import { formatContextUtilization } from "../format.ts";
 import type { SubagentReadModel } from "../manager.ts";
-import { pad } from "../../../shared/tui-kit/frame.ts";
+import { pad, sectionRule } from "../../../shared/tui-kit/frame.ts";
 import { paintSelected } from "../../../shared/tui-kit/paint.ts";
+import {
+  displayIndexOf,
+  groupRows,
+} from "../../../shared/tui-kit/grouping.ts";
 import {
   applyBottomAnchored,
   clampOffset,
@@ -40,6 +44,23 @@ function statusGlyph(snap: SubagentSnapshot, theme: Theme): string {
       return theme.fg("success", "■");
     case "error":
       return theme.fg("error", "■");
+  }
+}
+
+/**
+ * Which section of the dashboard a subagent belongs under. The status union
+ * is three-wide (running | done | error), so the mapping is one-to-one:
+ * "running" covers the only unsettled state, "done" the successful one, and
+ * "failed" covers `error`, which is also what an aborted run settles as.
+ */
+function groupLabelOf(snap: SubagentSnapshot): string {
+  switch (snap.status) {
+    case "running":
+      return "running";
+    case "done":
+      return "done";
+    case "error":
+      return "failed";
   }
 }
 
@@ -304,20 +325,31 @@ export class SubagentDashboard implements Component {
     const theme = this.theme;
     const out: string[] = [];
 
-    // Scroll window around selection
+    // The dashboard has no filter, so grouping is unconditional. It is a
+    // render-time transform only: the selection stays a flat index into
+    // `subs`, and handleInput never sees a header row.
+    const display = groupRows(subs, groupLabelOf);
+
+    // Scroll window around the selection, measured in DISPLAY rows so a
+    // header scrolls past like any other line while the selected agent
+    // stays on screen.
+    const cursor = Math.max(0, displayIndexOf(display, this.selection.index));
     let start = 0;
-    if (subs.length > height) {
+    if (display.length > height) {
       start = Math.min(
-        Math.max(0, this.selection.index - Math.floor(height / 2)),
-        subs.length - height,
+        Math.max(0, cursor - Math.floor(height / 2)),
+        display.length - height,
       );
     }
-    const visible = subs.slice(start, start + height);
+    const visible = display.slice(start, start + height);
 
-    for (let i = 0; i < visible.length; i++) {
-      const snap = visible[i];
-      const index = start + i;
-      const isSelected = index === this.selection.index;
+    for (const entry of visible) {
+      if (entry.kind === "header") {
+        out.push(sectionRule(theme, width, entry.label, "muted"));
+        continue;
+      }
+      const snap = entry.item;
+      const isSelected = entry.index === this.selection.index;
 
       // Left: marker, status square, title, dim id
       const marker = isSelected ? theme.fg("accent", "❯") : " ";
@@ -348,12 +380,21 @@ export class SubagentDashboard implements Component {
       out.push(isSelected ? paintSelected(row, width, theme) : pad(row, width));
     }
 
-    if (start > 0) {
-      out[0] = pad(theme.fg("dim", `   ... ${start} more`), width);
+    // Overflow markers overwrite the first and last visible lines, and count
+    // hidden AGENTS rather than hidden display rows: "... 3 more" reads as
+    // three subagents, and a section header scrolling off is not one of them.
+    // A window can therefore hide only a header, in which case no marker is
+    // drawn and the header simply scrolls away.
+    const agentsIn = (rows: typeof display) =>
+      rows.filter((row) => row.kind === "item").length;
+    const above = agentsIn(display.slice(0, start));
+    if (above > 0) {
+      out[0] = pad(theme.fg("dim", `   ... ${above} more`), width);
     }
-    if (start + height < subs.length) {
+    const below = agentsIn(display.slice(start + height));
+    if (below > 0) {
       out[out.length - 1] = pad(
-        theme.fg("dim", `   ... ${subs.length - start - height} more`),
+        theme.fg("dim", `   ... ${below} more`),
         width,
       );
     }

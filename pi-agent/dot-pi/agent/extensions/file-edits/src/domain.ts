@@ -49,6 +49,19 @@ export interface FileChange {
   readonly hunksPending: boolean;
 }
 
+/**
+ * Which section of the unfiltered picker a change belongs under.
+ *
+ * Origin outranks newness: a file a child session created reads as
+ * "from agents", because who touched the file is the thing you cannot
+ * recover from the row itself — the row already says "new file" in its
+ * counts, while the origin tag is easy to miss at the far right.
+ */
+export function groupLabel(change: FileChange): string {
+  if (change.origin.kind !== "self") return "from agents";
+  return change.isNew ? "new" : "modified";
+}
+
 export function describeOrigin(origin: ChangeOrigin): string | undefined {
   switch (origin.kind) {
     case "self":

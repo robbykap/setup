@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { groupLabel } from "../domain.ts";
 import {
   createPickerState,
   filterChanges,
@@ -57,6 +58,26 @@ test("child-session origins are tagged", () => {
 
 test("rows never exceed the width", () => {
   assert.ok(visibleWidth(renderPickerRow(change, 40, theme, 1_000_000)) <= 40);
+});
+
+// --- group labels -----------------------------------------------------------
+
+test("a file this session edited is modified, and a file it created is new", () => {
+  assert.equal(groupLabel(change), "modified");
+  assert.equal(groupLabel({ ...change, isNew: true }), "new");
+});
+
+test("a child session's changes group by who made them, new or not", () => {
+  const subagent = { kind: "subagent", id: "sa-2", name: "sa-2" } as const;
+  assert.equal(groupLabel({ ...change, origin: subagent }), "from agents");
+  assert.equal(
+    groupLabel({ ...change, origin: subagent, isNew: true }),
+    "from agents",
+  );
+  assert.equal(
+    groupLabel({ ...change, origin: { kind: "workflow", label: "ship" } }),
+    "from agents",
+  );
 });
 
 test("formatAge counts up in mm:ss then minutes", () => {

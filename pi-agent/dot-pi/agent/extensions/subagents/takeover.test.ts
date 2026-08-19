@@ -243,6 +243,81 @@ test("a long shell command cannot push the rule past the width", () => {
   assertWithin(lines, 60, "long command");
 });
 
+/** One subagent per status, so the dashboard draws all three sections. */
+function mixedModel(): SubagentReadModel {
+  return readModel([
+    snapshot("sa-1", { status: "running" }),
+    snapshot("sa-2", { status: "done" }),
+    snapshot("sa-3", { status: "error" }),
+  ]);
+}
+
+function dashboardLines(
+  view: SubagentReadModel,
+  selection: DashboardSelection,
+  width = 100,
+  rows = 30,
+) {
+  const dashboard = new SubagentDashboard(
+    stubTui(rows),
+    theme,
+    keybindings,
+    view,
+    selection,
+    () => {},
+  );
+  const lines = dashboard.render(width);
+  dashboard.dispose();
+  return lines;
+}
+
+function assertExact(lines: string[], width: number, label: string) {
+  lines.forEach((line, index) => {
+    assert.equal(
+      visibleWidth(line),
+      width,
+      `${label}: line ${index} is ${visibleWidth(line)} cells, want ${width}\n${JSON.stringify(line)}`,
+    );
+  });
+}
+
+test("the dashboard groups its rows under one rule per status", () => {
+  const lines = dashboardLines(mixedModel(), { index: 0 });
+  const rules = lines.filter((line) => line.includes("╌"));
+  assert.equal(rules.length, 3, "one rule per status");
+  for (const label of ["running", "done", "failed"]) {
+    assert.ok(
+      rules.some((rule) => rule.includes(label)),
+      `no rule labelled ${label}`,
+    );
+  }
+  assertExact(lines, 100, "grouped dashboard");
+});
+
+test("grouping still highlights exactly one row, the selected one", () => {
+  // The cursor is a flat index into the model's order, not a display row.
+  const lines = dashboardLines(mixedModel(), { index: 2 });
+  const opener = openerOf((text) => theme.bg("selectedBg", text));
+  const filled = lines.filter((line) => line.includes(opener));
+  assert.equal(filled.length, 1, "exactly one row should be highlighted");
+  assert.ok(filled[0].includes("sa-3"), "the wrong row is highlighted");
+  assertExact(lines, 100, "grouped dashboard with a selection fill");
+});
+
+test("an overflowing dashboard counts the rows hidden above and below", () => {
+  const many = readModel(
+    Array.from({ length: 40 }, (_, index) =>
+      snapshot(`sa-${index}`, {
+        status: index % 2 === 0 ? "running" : "done",
+      }),
+    ),
+  );
+  const lines = dashboardLines(many, { index: 30 });
+  const more = lines.filter((line) => line.includes("more"));
+  assert.equal(more.length, 2, "both overflow markers should show");
+  assertExact(lines, 100, "overflowing dashboard");
+});
+
 test("the selected dashboard row carries the selection fill, and only it", () => {
   const dashboard = new SubagentDashboard(
     stubTui(),

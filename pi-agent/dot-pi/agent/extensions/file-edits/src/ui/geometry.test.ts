@@ -95,6 +95,43 @@ function storeWith(count: number): FileEditStore {
   return store;
 }
 
+/** A store holding one self-edited file, one new file, one from a subagent. */
+function mixedStore(): FileEditStore {
+  const store = createFileEditStore();
+  const now = Date.now();
+  store.record({
+    path: "src/router.ts",
+    hunks: PATCH.hunks,
+    added: 12,
+    removed: 4,
+    isNew: false,
+    origin: { kind: "self" },
+    at: now,
+  });
+  store.record({
+    path: "src/new.ts",
+    hunks: PATCH.hunks,
+    added: 9,
+    removed: 0,
+    isNew: true,
+    origin: { kind: "self" },
+    at: now - 1000,
+  });
+  store.record({
+    path: "docs/x.md",
+    hunks: PATCH.hunks,
+    added: 3,
+    removed: 1,
+    isNew: false,
+    origin: { kind: "subagent", id: "sa-2", name: "sa-2" },
+    at: now - 2000,
+  });
+  return store;
+}
+
+/** Section rules are the only lines drawn with the dashed glyph. */
+const ruleLines = (lines: string[]) => lines.filter((line) => line.includes("╌"));
+
 function assertExact(lines: string[], width: number, label: string) {
   lines.forEach((line, index) => {
     assert.equal(
@@ -154,10 +191,67 @@ test("the selected row carries the selection background, and only it", () => {
 
   const filled = lines.filter((line) => line.includes(opener));
   assert.equal(filled.length, 1, "exactly one row should be highlighted");
-  // Two lines of chrome above the body, and index 1 with a short list that
-  // starts at row 0.
-  assert.equal(filled[0], lines[3]);
+  // Two lines of chrome above the body, then the group header these files
+  // all share, and index 1 with a short list that starts at row 0.
+  assert.equal(filled[0], lines[4]);
   assertExact(lines, 100, "picker with a selection fill");
+});
+
+test("an unfiltered list is grouped under labelled rules", () => {
+  const picker = new FilePicker(
+    stubTui(),
+    theme,
+    keybindings,
+    mixedStore(),
+    { query: "", index: 0 },
+    () => {},
+  );
+  const lines = picker.render(100);
+  const rules = ruleLines(lines);
+  assert.equal(rules.length, 3, "one rule per group");
+  for (const label of ["modified", "new", "from agents"]) {
+    assert.ok(
+      rules.some((rule) => rule.includes(label)),
+      `no rule labelled ${label}`,
+    );
+  }
+  assertExact(lines, 100, "grouped picker");
+  assert.equal(lines.length, EXPECTED_LINES);
+});
+
+test("grouping still highlights exactly one row, the selected one", () => {
+  const store = mixedStore();
+  // The cursor is a flat index into the store's order, not a display row.
+  const index = store.list().findIndex((row) => row.path === "docs/x.md");
+  const picker = new FilePicker(
+    stubTui(),
+    theme,
+    keybindings,
+    store,
+    { query: "", index },
+    () => {},
+  );
+  const lines = picker.render(100);
+  const opener = openerOf((text) => theme.bg("selectedBg", text));
+  const filled = lines.filter((line) => line.includes(opener));
+  assert.equal(filled.length, 1, "exactly one row should be highlighted");
+  assert.ok(filled[0]?.includes("docs/x.md"), "the wrong row is highlighted");
+  assertExact(lines, 100, "grouped picker with a selection fill");
+});
+
+test("a filtered list is flat: the filter replaces the grouping", () => {
+  const picker = new FilePicker(
+    stubTui(),
+    theme,
+    keybindings,
+    mixedStore(),
+    { query: "src", index: 0 },
+    () => {},
+  );
+  const lines = picker.render(100);
+  assert.deepEqual(ruleLines(lines), [], "a filtered list should have no headers");
+  assertExact(lines, 100, "filtered picker");
+  assert.equal(lines.length, EXPECTED_LINES);
 });
 
 test("a filter matching nothing still fills the rectangle", () => {
