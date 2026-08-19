@@ -69,6 +69,30 @@ editor border, and the gauge drains as context fills (green â†’ yellow at 25% â†
 red at 10%). Ghostty is on Catppuccin Mocha too
 (`ghostty/dot-config/ghostty/config`).
 
+## Shared UI kit
+
+`extensions/shared/tui-kit/` is the visual language every overlay is built
+from, so a panel in `/cmds` and a panel in `/files` are the same object with
+different contents. It was lifted out of `file-edits` once a second extension
+needed the same geometry; extensions reach it by relative path. Anything new
+that draws an overlay should be assembled from these rather than grow its own
+chrome:
+
+| Unit        | What it owns                                                   |
+| ----------- | -------------------------------------------------------------- |
+| `frame`     | Panel chrome and exact-width lines, measured in visible cells    |
+| `icons`     | File-type and UI glyphs, all Mocha accents                       |
+| `paint`     | Selection fills and diff tints that survive a row's own resets   |
+| `highlight` | Syntax highlighting that never changes a line count              |
+| `scroll`    | One scroll model, so `j` means the same thing in every viewer    |
+| `copy`      | Clipboard writes with a one-line receipt, and no throwing        |
+| `status`    | The one shape a status-bar segment takes                         |
+| `grouping`  | Render-time picker grouping, selection staying flat underneath   |
+
+```sh
+cd ~/.pi/agent/extensions/shared && npm test   # 99 tests
+```
+
 ## Status bar
 
 Extension statuses (`file-edits`, `commands`, `subagents`,
@@ -155,5 +179,5 @@ the same file survives moving between machines.
 Recaps are similarly inert until `/summary-model` picks a model.
 
 ```sh
-cd ~/.pi/agent/extensions/subagents && npm test   # 34 tests
+cd ~/.pi/agent/extensions/subagents && npm test   # 72 tests
 ```
