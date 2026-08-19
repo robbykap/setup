@@ -140,9 +140,8 @@ test("the selected row carries the selection background, and only it", () => {
 
   const filled = lines.filter((line) => line.includes(opener));
   assert.equal(filled.length, 1, "exactly one row should be highlighted");
-  // Two lines of chrome above the body, then the group header these `echo`
-  // rows all share, and index 1 with a short list that starts at row 0.
-  assert.equal(filled[0], lines[4]);
+  // Index 1 into a short list that starts at row 0: the second `echo`.
+  assert.ok(filled[0]?.includes("echo c1"), "the wrong row is highlighted");
   assertExact(lines, 100, "picker with a selection fill");
 });
 

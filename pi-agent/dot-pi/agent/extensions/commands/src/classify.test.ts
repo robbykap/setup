@@ -88,10 +88,69 @@ test("the npm family resolves test, then build, then packages, then run", () => 
   });
 });
 
+test("the npm family's everyday verbs", () => {
+  expect({
+    "npm ci": "packages",
+    "npm update": "packages",
+    "npm uninstall lodash": "packages",
+    "pnpm update --latest": "packages",
+    "yarn ci": "packages",
+    "npm exec tsx script.ts": "run",
+    "pnpm exec prettier --write .": "run",
+    // Installing a test runner is still an install.
+    "bun add vitest": "packages",
+    "npm i -D jest": "packages",
+    // `latest` is not `test`.
+    "npm run latest": "run",
+  });
+});
+
+test("cargo, go and vite run as well as build", () => {
+  expect({
+    "cargo run": "run",
+    "cargo run --release": "run",
+    "go run ./cmd/x": "run",
+    vite: "run",
+    "vite dev": "run",
+    "vite build --mode production": "build",
+  });
+});
+
+test("a runtime that is running a test runner is a test", () => {
+  expect({
+    "python -m pytest": "test",
+    "python3 -m pytest tests/": "test",
+    "deno test": "test",
+    "npx vitest": "test",
+    "npx jest --watch": "test",
+    "bun run vitest": "test",
+    "python -m pytest src/x.test.py": "test",
+    // A runtime with no runner in sight is still just a run.
+    "python manage.py runserver": "run",
+    "node scripts/serve.js": "run",
+  });
+});
+
+test("docker builds, and the other tools stay other", () => {
+  expect({
+    "docker build -t app .": "build",
+    "docker ps": "other",
+    "docker compose up": "other",
+    "gh pr list": "other",
+    "kubectl get pods": "other",
+    "terraform apply": "other",
+  });
+});
+
 test("prefixes are stripped down to the real executable", () => {
   expect({
     "cd x && rg foo": "search",
     "cd /repo/pkg && npm run build": "build",
+    "cd x && cd y && npm test": "test",
+    'cd "my dir" && npm test': "test",
+    "cd 'my dir' && rg foo": "search",
+    "cd x && FOO=1 npm test": "test",
+    "FOO=1 cd x && npm test": "test",
     "FOO=1 npm test": "test",
     "FOO=1 BAR=2 curl example.com": "network",
     "sudo make install": "build",
