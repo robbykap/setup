@@ -52,3 +52,10 @@ test("clampOffset pins into range", () => {
   assert.equal(clampOffset(Number.MAX_SAFE_INTEGER, 42), 42);
   assert.equal(clampOffset(-3, 42), 0);
 });
+
+test("clamp-on-store keeps g-then-j moving", () => {
+  const max = 100;
+  const atTop = clampOffset(applyBottomAnchored(0, "top", 20), max);
+  assert.equal(atTop, 100);
+  assert.equal(clampOffset(applyBottomAnchored(atTop, "line-down", 20), max), 99);
+});

@@ -44,45 +44,55 @@ export function scrollActionFor(
 
 const FAR = Number.MAX_SAFE_INTEGER;
 
-/** Offset counts lines up from the end; 0 is pinned to the tail. Callers
- * clamp against their own max in render, where content length is known. */
+/** Offset counts lines up from the end; 0 is pinned to the tail. `top` returns
+ * a sentinel far past any real content, so callers must write the result back
+ * through clampOffset against their own max before storing it — clamping only
+ * at render leaves the stored offset at the sentinel, and the next line-down
+ * lands back on the same row. */
 export function applyBottomAnchored(
   offset: number,
   action: ScrollAction,
   viewport: number,
 ): number {
   const half = Math.max(1, Math.floor(viewport / 2));
+  const step = Math.max(1, viewport);
   switch (action) {
     case "line-up": return offset + 1;
     case "line-down": return Math.max(0, offset - 1);
     case "half-up": return offset + half;
     case "half-down": return Math.max(0, offset - half);
-    case "page-up": return offset + viewport;
-    case "page-down": return Math.max(0, offset - viewport);
+    case "page-up": return offset + step;
+    case "page-down": return Math.max(0, offset - step);
     case "top": return FAR;
     case "bottom": return 0;
   }
 }
 
-/** Offset counts lines down from the start; 0 is the first line. */
+/** Offset counts lines down from the start; 0 is the first line. `bottom`
+ * returns a sentinel far past any real content, so callers must write the
+ * result back through clampOffset against their own max before storing it —
+ * clamping only at render leaves the stored offset at the sentinel, and the
+ * next line-up lands back on the same row. */
 export function applyTopAnchored(
   offset: number,
   action: ScrollAction,
   viewport: number,
 ): number {
   const half = Math.max(1, Math.floor(viewport / 2));
+  const step = Math.max(1, viewport);
   switch (action) {
     case "line-up": return Math.max(0, offset - 1);
     case "line-down": return offset + 1;
     case "half-up": return Math.max(0, offset - half);
     case "half-down": return offset + half;
-    case "page-up": return Math.max(0, offset - viewport);
-    case "page-down": return offset + viewport;
+    case "page-up": return Math.max(0, offset - step);
+    case "page-down": return offset + step;
     case "top": return 0;
     case "bottom": return FAR;
   }
 }
 
+/** Pin a possibly-sentinel offset into [0, max]. Every offset must pass through here before it is stored. */
 export function clampOffset(offset: number, max: number): number {
   return Math.max(0, Math.min(offset, max));
 }
