@@ -20,9 +20,16 @@ import {
   bodyRow,
   bottomBorder,
   outerLine,
+  sectionRule,
   topBorder,
 } from "../../../shared/tui-kit/frame.ts";
 import { paintSelected } from "../../../shared/tui-kit/paint.ts";
+import {
+  displayIndexOf,
+  groupRows,
+  type DisplayRow,
+} from "../../../shared/tui-kit/grouping.ts";
+import { classify } from "../classify.ts";
 import {
   createPickerState,
   filterRecords,
@@ -171,15 +178,33 @@ export class CommandPicker implements Component {
       ),
     ];
 
+    // Unfiltered, the list is grouped by what each command does; filtered,
+    // the query is already the organising principle, and headers would only
+    // push matches off the screen. Either way the cursor stays flat: this is
+    // a render-time transform, and handleInput never sees a header row.
+    const display: ReadonlyArray<DisplayRow<CommandRecord>> = this.state.query
+      ? rows.map((item, index) => ({ kind: "item", item, index }))
+      : groupRows(rows, (record) => classify(record.command));
+
     // Keep the cursor inside the window, clamped so short lists start at 0.
+    // The window walks DISPLAY rows, so a header can scroll past like any
+    // other line, but the selected command is always on screen.
+    const cursor = Math.max(0, displayIndexOf(display, this.state.index));
     const start = Math.max(
       0,
-      Math.min(this.state.index - Math.floor(height / 2), rows.length - height),
+      Math.min(cursor - Math.floor(height / 2), display.length - height),
     );
-    const visible = rows.slice(start, start + height);
+    const visible = display.slice(start, start + height);
 
     for (let index = 0; index < height; index += 1) {
-      const record = visible[index];
+      const row = visible[index];
+      if (row?.kind === "header") {
+        lines.push(
+          bodyRow(theme, width, sectionRule(theme, inner, row.label, "muted")),
+        );
+        continue;
+      }
+      const record = row?.item;
       if (!record) {
         // Empty rows are still drawn, so the panel keeps its shape.
         const placeholder =
@@ -189,7 +214,7 @@ export class CommandPicker implements Component {
         lines.push(bodyRow(theme, width, placeholder));
         continue;
       }
-      const selected = start + index === this.state.index;
+      const selected = row.index === this.state.index;
       const marker = selected ? theme.fg("accent", "❯ ") : "  ";
       // inner - 2 leaves room for the marker; the selection fill (or bodyRow's
       // own pad) covers the remainder of the row.

@@ -87,6 +87,18 @@ function storeWith(count: number): CommandStore {
   return store;
 }
 
+function storeOf(commands: string[]): CommandStore {
+  const store = createCommandStore();
+  const now = Date.now();
+  commands.forEach((command, index) => {
+    store.record({ ...record(`c${index}`, now - index * 1000), command });
+  });
+  return store;
+}
+
+/** Section rules are the only lines drawn with the dashed glyph. */
+const ruleLines = (lines: string[]) => lines.filter((line) => line.includes("╌"));
+
 function assertExact(lines: string[], width: number, label: string) {
   lines.forEach((line, index) => {
     assert.equal(
@@ -128,8 +140,65 @@ test("the selected row carries the selection background, and only it", () => {
 
   const filled = lines.filter((line) => line.includes(opener));
   assert.equal(filled.length, 1, "exactly one row should be highlighted");
-  // Two lines of chrome above the body, and index 1 with a short list that
-  // starts at row 0.
-  assert.equal(filled[0], lines[3]);
+  // Two lines of chrome above the body, then the group header these `echo`
+  // rows all share, and index 1 with a short list that starts at row 0.
+  assert.equal(filled[0], lines[4]);
   assertExact(lines, 100, "picker with a selection fill");
+});
+
+const GROUPED = ["git status", "git log", "rg needle src", "npm test"];
+
+test("an unfiltered list is grouped under category rules", () => {
+  const picker = new CommandPicker(
+    stubTui(),
+    theme,
+    keybindings,
+    storeOf(GROUPED),
+    { query: "", index: 0 },
+    () => {},
+  );
+  const lines = picker.render(100);
+  const rules = ruleLines(lines);
+  assert.equal(rules.length, 3, "one rule per category");
+  for (const label of ["git", "search", "test"]) {
+    assert.ok(
+      rules.some((rule) => rule.includes(label)),
+      `no rule labelled ${label}`,
+    );
+  }
+  assertExact(lines, 100, "grouped picker");
+  assert.equal(lines.length, EXPECTED_LINES);
+});
+
+test("grouping still highlights exactly one row, the selected one", () => {
+  const store = storeOf(GROUPED);
+  // The cursor is a flat index into the store's order, not a display row.
+  const index = store.list().findIndex((row) => row.command === "npm test");
+  const picker = new CommandPicker(
+    stubTui(),
+    theme,
+    keybindings,
+    store,
+    { query: "", index },
+    () => {},
+  );
+  const lines = picker.render(100);
+  const opener = openerOf((text) => theme.bg("selectedBg", text));
+  const filled = lines.filter((line) => line.includes(opener));
+  assert.equal(filled.length, 1, "exactly one row should be highlighted");
+  assert.ok(filled[0]?.includes("npm test"), "the wrong row is highlighted");
+});
+
+test("a filtered list is flat: the filter replaces the grouping", () => {
+  const picker = new CommandPicker(
+    stubTui(),
+    theme,
+    keybindings,
+    storeOf(GROUPED),
+    { query: "git", index: 0 },
+    () => {},
+  );
+  const lines = picker.render(100);
+  assert.deepEqual(ruleLines(lines), [], "a filtered list should have no headers");
+  assertExact(lines, 100, "filtered picker");
 });
