@@ -71,6 +71,7 @@ test("whitespace-only status text is dropped", () => {
 test("segment order is the documented one", () => {
   assert.deepEqual(SEGMENT_ORDER, [
     "file-edits",
+    "commands",
     "subagents",
     "background-terminals",
     "workflows",

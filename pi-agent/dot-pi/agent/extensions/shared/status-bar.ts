@@ -20,6 +20,7 @@ const SEPARATOR = " ◆ ";
  */
 export const SEGMENT_ORDER = [
   "file-edits",
+  "commands",
   "subagents",
   "background-terminals",
   "workflows",

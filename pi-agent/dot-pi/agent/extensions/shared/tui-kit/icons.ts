@@ -36,7 +36,9 @@ function glyph(codePoint: number, rgb: Rgb): FileIcon {
   return { glyph: String.fromCodePoint(codePoint), rgb };
 }
 
-const FALLBACK = glyph(0xf016, SUBTEXT);
+/** The generic-document icon: what an unmatched path gets, and what a segment
+ * about files in general (rather than one file) should paint. */
+export const FALLBACK_FILE_ICON = glyph(0xf016, SUBTEXT);
 
 /** Exact filenames take precedence over extensions. */
 const BY_NAME: Record<string, FileIcon> = {
@@ -79,7 +81,7 @@ const BY_EXTENSION: Record<string, FileIcon> = {
   fish: glyph(0xe795, GREEN),
   md: glyph(0xe73e, SUBTEXT),
   mdx: glyph(0xe73e, SUBTEXT),
-  txt: glyph(0xf016, SUBTEXT), // same as FALLBACK; explicit so .txt stays stable if the fallback changes
+  txt: glyph(0xf016, SUBTEXT), // same as FALLBACK_FILE_ICON; explicit so .txt stays stable if the fallback changes
   toml: glyph(0xe615, PEACH),
   yaml: glyph(0xe615, PEACH),
   yml: glyph(0xe615, PEACH),
@@ -115,7 +117,7 @@ export const UI_ICONS = {
 
 /** Every icon in the module, for the width invariant test. */
 export const ALL_ICONS: readonly FileIcon[] = [
-  FALLBACK,
+  FALLBACK_FILE_ICON,
   ...Object.values(BY_NAME),
   ...Object.values(BY_EXTENSION),
   ...Object.values(UI_ICONS),
@@ -127,8 +129,8 @@ export function iconFor(path: string): FileIcon {
   if (byName) return byName;
 
   const dot = name.lastIndexOf(".");
-  if (dot <= 0) return FALLBACK;
-  return BY_EXTENSION[name.slice(dot + 1)] ?? FALLBACK;
+  if (dot <= 0) return FALLBACK_FILE_ICON;
+  return BY_EXTENSION[name.slice(dot + 1)] ?? FALLBACK_FILE_ICON;
 }
 
 export function paintIcon({ glyph, rgb: [r, g, b] }: FileIcon): string {

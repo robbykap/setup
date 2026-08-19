@@ -52,6 +52,8 @@ import {
   runTool,
   type TerminalRuntime,
 } from "./src/runtime.ts";
+import { UI_ICONS } from "../shared/tui-kit/icons.ts";
+import { statusSegment } from "../shared/tui-kit/status.ts";
 import { sanitizeText } from "./src/ui/output-view.ts";
 import { openTerminalPicker } from "./src/ui/ps.ts";
 
@@ -81,32 +83,38 @@ export default function (pi: ExtensionAPI) {
     return managerPromise;
   };
 
-  /** Status segment on the shared line directly above the editor, only while ≥1 is running.
+  /** Status segment on the shared line directly above the editor: a clock and
+   * the running count while ≥1 runs, a check and the tracked count once they
+   * have all settled.
    * Called on every manager notification (including per-output-chunk), so it
-   * only touches setStatus when the running count actually changes —
-   * publishing status updates hundreds of times a second would be wasteful
-   * for no visible difference. */
-  let statusRunning = 0;
+   * only touches setStatus when those counts actually change — publishing
+   * status updates hundreds of times a second would be wasteful for no
+   * visible difference. */
+  let statusCounts = "";
   const updateStatus = (manager: TerminalManagerShape) => {
     if (!ui) return;
     try {
-      const running = manager.view
-        .list()
-        .filter((snap) => snap.status === "running").length;
-      if (running === statusRunning) return;
-      statusRunning = running;
-      if (running === 0) {
+      const terminals = manager.view.list();
+      const running = terminals.filter(
+        (snap) => snap.status === "running",
+      ).length;
+      const key = `${running}/${terminals.length}`;
+      if (key === statusCounts) return;
+      statusCounts = key;
+      if (terminals.length === 0) {
         ui.setStatus(STATUS_KEY, undefined);
         return;
       }
+      const count = running > 0 ? running : terminals.length;
       // Joins the shared line above the editor rather than owning a row.
       ui.setStatus(
         STATUS_KEY,
-        ui.theme.fg("accent", "▶") +
-          " " +
-          ui.theme.fg("warning", String(running)) +
-          " " +
-          ui.theme.fg("text", "terminal" + (running === 1 ? "" : "s")),
+        statusSegment(
+          ui.theme,
+          running > 0 ? UI_ICONS.clock : UI_ICONS.check,
+          count,
+          "terminal" + (count === 1 ? "" : "s"),
+        ),
       );
     } catch {
       // UI may be unavailable (print/RPC modes or teardown).
@@ -190,7 +198,7 @@ export default function (pi: ExtensionAPI) {
     } catch {
       // UI may already be gone.
     }
-    statusRunning = 0;
+    statusCounts = "";
     ui = undefined;
     const closing = runtime;
     runtime = undefined;

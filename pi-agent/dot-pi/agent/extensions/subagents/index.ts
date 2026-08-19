@@ -79,7 +79,8 @@ import { COMMAND_CHANNEL } from "../shared/command-log.ts";
 import type { ChildCommand } from "./src/domain.ts";
 import { buildModelChoices } from "../shared/model-choices.ts";
 import { formatContextUtilization } from "./src/format.ts";
-import { formatActivityStatus } from "../shared/activity-status.ts";
+import { UI_ICONS } from "../shared/tui-kit/icons.ts";
+import { statusSegment, type StatusTail } from "../shared/tui-kit/status.ts";
 import { SubagentManager, type SubagentManagerShape } from "./src/manager.ts";
 import {
   buildSubagentResultMessage,
@@ -316,8 +317,26 @@ export default function (pi: ExtensionAPI) {
     const running = subs.filter((snap) => snap.status === "running").length;
     const failed = subs.filter((snap) => snap.status === "error").length;
     const done = subs.length - running - failed;
-    const segment = formatActivityStatus(ui.theme, "subagents", { running, done, failed });
-    ui.setStatus("subagents", segment);
+    // Same three numbers as before, and still only the non-zero ones: the
+    // first of them heads the segment, the rest trail it.
+    const counts = [
+      { count: running, label: "running", kind: "neutral" as const },
+      { count: done, label: "done", kind: "neutral" as const },
+      { count: failed, label: "failed", kind: "error" as const },
+    ].filter((entry) => entry.count > 0);
+    if (counts.length === 0) {
+      ui.setStatus("subagents", undefined);
+      return;
+    }
+    const [head, ...rest] = counts;
+    const tails: StatusTail[] = rest.map((entry) => ({
+      text: `${entry.count} ${entry.label}`,
+      kind: entry.kind,
+    }));
+    ui.setStatus(
+      "subagents",
+      statusSegment(ui.theme, UI_ICONS.agent, head.count, head.label, tails),
+    );
   };
 
   const deliverResult = (snap: SubagentSnapshot) => {

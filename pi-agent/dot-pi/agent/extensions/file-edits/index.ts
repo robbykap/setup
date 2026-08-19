@@ -31,6 +31,8 @@ import {
   createEditToolDefinition,
   createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { FALLBACK_FILE_ICON } from "../shared/tui-kit/icons.ts";
+import { statusSegment, type StatusTail } from "../shared/tui-kit/status.ts";
 import type { FileChange } from "./src/domain.ts";
 import { failedCallPath, failedChange, failureReason } from "./src/failure.ts";
 import { observeChildFiles } from "./src/observe.ts";
@@ -67,14 +69,38 @@ export default function (pi: ExtensionAPI) {
   const updateStatus = () => {
     if (!ui) return;
     try {
-      const { files } = store.totals();
+      const { files, added, removed } = store.totals();
       if (files === 0) {
         ui.setStatus(STATUS_KEY, undefined);
         return;
       }
+      // The +/− tails keep the diff colours they carry everywhere else in the
+      // TUI, which is what makes them readable without their own labels.
+      const theme = ui.theme;
+      const tails: StatusTail[] = [];
+      if (added > 0) {
+        tails.push({
+          text: `+${added}`,
+          kind: "neutral",
+          paint: (text) => theme.fg("toolDiffAdded", text),
+        });
+      }
+      if (removed > 0) {
+        tails.push({
+          text: `−${removed}`,
+          kind: "neutral",
+          paint: (text) => theme.fg("toolDiffRemoved", text),
+        });
+      }
       ui.setStatus(
         STATUS_KEY,
-        `${ui.theme.fg("accent", "󰈔")} ${ui.theme.fg("text", `${files} file${files === 1 ? "" : "s"}`)}`,
+        statusSegment(
+          theme,
+          FALLBACK_FILE_ICON,
+          files,
+          `file${files === 1 ? "" : "s"}`,
+          tails,
+        ),
       );
     } catch {
       // UI unavailable in print/RPC modes or during teardown.
