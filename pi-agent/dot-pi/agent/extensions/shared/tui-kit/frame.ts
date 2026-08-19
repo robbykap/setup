@@ -5,9 +5,8 @@
  * padded.
  *
  * Lifted out of file-edits so the pickers and viewers in every extension share
- * one geometry. background-terminals/src/ui/ps.ts still carries its own private
- * copy of pad/borderSegment; it should move here too. Extensions reach in by
- * relative path — the older copy-don't-import rule for independent
+ * one geometry (background-terminals/src/ui/ps.ts, which these came from,
+ * imports them from here now). Extensions reach in by relative path — the older copy-don't-import rule for independent
  * installability no longer applies now that the extensions ship together.
  * Widths are measured with visibleWidth, never String.length: every one of
  * these strings carries ANSI colour escapes.

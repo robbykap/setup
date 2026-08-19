@@ -17,6 +17,14 @@ import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { formatElapsed, formatExit, type TerminalSnapshot } from "../domain.ts";
 import type { TerminalReadModel } from "../manager.ts";
+import { copyText } from "../../../shared/tui-kit/copy.ts";
+import { borderSegment, pad } from "../../../shared/tui-kit/frame.ts";
+import { paintSelected } from "../../../shared/tui-kit/paint.ts";
+import {
+  applyBottomAnchored,
+  clampOffset,
+  scrollActionFor,
+} from "../../../shared/tui-kit/scroll.ts";
 import { createOutputLineCache, sanitizeText } from "./output-view.ts";
 
 /** One-line-safe rendering of model-provided text (titles, commands): a
@@ -120,7 +128,7 @@ export function reconcileDashboardSelection(
   selection.id = terminals[selection.index]?.id;
 }
 
-class TerminalDashboard implements Component {
+export class TerminalDashboard implements Component {
   private tui: TUI;
   private theme: Theme;
   private keybindings: KeybindingsManager;
@@ -208,24 +216,6 @@ class TerminalDashboard implements Component {
     }
   }
 
-  private pad(text: string, width: number): string {
-    const truncated = truncateToWidth(text, width);
-    return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
-  }
-
-  private borderSegment(width: number, title: string): string {
-    const theme = this.theme;
-    const label = title
-      ? ` ${truncateToWidth(title, Math.max(0, width - 3))} `
-      : "";
-    const labelWidth = visibleWidth(label);
-    return (
-      theme.fg("border", "─") +
-      (label ? theme.fg("text", label) : "") +
-      theme.fg("border", "─".repeat(Math.max(0, width - 1 - labelWidth)))
-    );
-  }
-
   render(width: number): string[] {
     const theme = this.theme;
     const terminals = this.terminals();
@@ -251,17 +241,15 @@ class TerminalDashboard implements Component {
       width - visibleWidth(headerLeft) - visibleWidth(headerRight) - 4,
     );
     lines.push(
-      truncateToWidth(
-        `  ${headerLeft}${" ".repeat(headerPad)}${headerRight}  `,
-        width,
-      ),
+      pad(`  ${headerLeft}${" ".repeat(headerPad)}${headerRight}  `, width),
     );
 
     // Top border with panel title
     const running = terminals.filter((s) => s.status === "running").length;
     lines.push(
       theme.fg("border", "╭") +
-        this.borderSegment(
+        borderSegment(
+          theme,
           innerWidth,
           `terminals · ${running} running / ${terminals.length}`,
         ) +
@@ -270,9 +258,12 @@ class TerminalDashboard implements Component {
 
     // Rows
     const divider = theme.fg("border", "│");
+    // renderRows returns rows already fitted to innerWidth: a selected row
+    // carries a background fill, and re-padding it here would run the escapes
+    // through truncateToWidth a second time.
     const rowLines = this.renderRows(terminals, innerWidth, bodyHeight);
     for (let i = 0; i < bodyHeight; i++) {
-      lines.push(divider + this.pad(rowLines[i] ?? "", innerWidth) + divider);
+      lines.push(divider + (rowLines[i] ?? " ".repeat(innerWidth)) + divider);
     }
 
     // Bottom border
@@ -284,7 +275,7 @@ class TerminalDashboard implements Component {
 
     // Hints
     lines.push(
-      truncateToWidth(
+      pad(
         theme.fg(
           "dim",
           `  ${configuredKeys(this.keybindings, "tui.select.up")}/${configuredKeys(this.keybindings, "tui.select.down")}/jk select · ${configuredKeys(this.keybindings, "tui.select.confirm")} inspect · x kill · ${configuredKeys(this.keybindings, "tui.select.cancel")} close`,
@@ -341,14 +332,17 @@ class TerminalDashboard implements Component {
       const leftMax = Math.max(0, width - rightWidth - 2);
       const leftTruncated = truncateToWidth(left, leftMax);
       const gap = Math.max(2, width - visibleWidth(leftTruncated) - rightWidth);
-      out.push(truncateToWidth(leftTruncated + " ".repeat(gap) + right, width));
+      // The marker lives inside the painted body, so the fill spans the row
+      // edge to edge; paintSelected pads to `width` itself.
+      const row = leftTruncated + " ".repeat(gap) + right;
+      out.push(isSelected ? paintSelected(row, width, theme) : pad(row, width));
     }
 
     if (start > 0) {
-      out[0] = truncateToWidth(theme.fg("dim", `   ... ${start} more`), width);
+      out[0] = pad(theme.fg("dim", `   ... ${start} more`), width);
     }
     if (start + height < terminals.length) {
-      out[out.length - 1] = truncateToWidth(
+      out[out.length - 1] = pad(
         theme.fg("dim", `   ... ${terminals.length - start - height} more`),
         width,
       );
@@ -361,9 +355,7 @@ class TerminalDashboard implements Component {
 
 // --- Detail view (read-only inspector) --------------------------------------------
 
-const OUTPUT_SCROLL_STEP = 6;
-
-class TerminalDetailView implements Component {
+export class TerminalDetailView implements Component {
   private tui: TUI;
   private theme: Theme;
   private keybindings: KeybindingsManager;
@@ -376,10 +368,14 @@ class TerminalDetailView implements Component {
   /** Scroll offset in lines from the bottom. 0 = pinned to bottom (live tail). */
   private scrollOffset = 0;
   private lineCache = createOutputLineCache();
+  private copyNote: string | undefined;
   private unsubscribe: () => void;
   private renderTimer?: ReturnType<typeof setTimeout>;
   private ticker: ReturnType<typeof setInterval>;
   private closed = false;
+  /** The clipboard itself, injectable so a test can press `y` without one.
+   * Package-internal: nothing outside this extension sets it. */
+  copier?: (text: string) => Promise<void> | void;
 
   constructor(
     tui: TUI,
@@ -433,6 +429,10 @@ class TerminalDetailView implements Component {
   }
 
   handleInput(data: string): void {
+    // The receipt belongs to the copy that produced it: any keypress at all
+    // clears it, handled or not. The pending copy's .then still overwrites
+    // this, which is what makes a slow copier's note land rather than vanish.
+    this.copyNote = undefined;
     if (
       this.keybindings.matches(data, "app.interrupt") ||
       this.keybindings.matches(data, "tui.select.cancel")
@@ -452,42 +452,44 @@ class TerminalDetailView implements Component {
       if (snap?.status === "running") this.view.requestKill(this.id);
       return;
     }
-    if (this.keybindings.matches(data, "tui.editor.cursorUp") || data === "k") {
-      this.scrollOffset += OUTPUT_SCROLL_STEP;
-      this.tui.requestRender();
+    if (data === "y") {
+      const snap = this.snap();
+      if (!snap) return;
+      const buffer = this.stream === "stdout" ? snap.stdout : snap.stderr;
+      this.copy(buffer.text, this.stream);
       return;
     }
-    if (
-      this.keybindings.matches(data, "tui.editor.cursorDown") ||
-      data === "j"
-    ) {
-      this.scrollOffset = Math.max(0, this.scrollOffset - OUTPUT_SCROLL_STEP);
-      this.tui.requestRender();
-      return;
-    }
-    if (this.keybindings.matches(data, "tui.editor.pageUp")) {
-      this.scrollOffset += this.viewportHeight();
-      this.tui.requestRender();
-      return;
-    }
-    if (this.keybindings.matches(data, "tui.editor.pageDown")) {
-      this.scrollOffset = Math.max(
-        0,
-        this.scrollOffset - this.viewportHeight(),
+    // vimKeys: this view has no input surface — background terminals have no
+    // stdin — so printable keys are ours to bind.
+    const action = scrollActionFor(data, this.keybindings, { vimKeys: true });
+    if (action) {
+      this.scrollOffset = applyBottomAnchored(
+        this.scrollOffset,
+        action,
+        this.viewportHeight(),
       );
       this.tui.requestRender();
-      return;
     }
-    if (data === "g") {
-      this.scrollOffset = Number.MAX_SAFE_INTEGER; // clamped to top in render
+  }
+
+  private copy(text: string, label: string) {
+    if (text.length === 0) {
+      // An empty clipboard reads as a failed copy; say which it was.
+      this.copyNote = "nothing to copy";
       this.tui.requestRender();
       return;
     }
-    if (data === "G") {
-      this.scrollOffset = 0;
-      this.tui.requestRender();
-      return;
-    }
+    void copyText(text, label, this.copier)
+      .then((note) => {
+        // A copy can outlive the view: the note has nowhere to land, and
+        // rendering a disposed component is worse than dropping it.
+        if (this.closed) return;
+        this.copyNote = note;
+        this.tui.requestRender();
+      })
+      // copyText never throws, but the render above can; the no-throw
+      // guarantee ends at its boundary (tui-kit/copy.ts).
+      .catch(() => {});
   }
 
   private viewportHeight(): number {
@@ -579,8 +581,15 @@ class TerminalDetailView implements Component {
     const body: string[] = [...noteRows];
     const scrollRows = this.scrollOffset > 0 ? 1 : 0;
     const capacity = Math.max(1, viewport - body.length - scrollRows);
+    // The kit asks callers to clamp on store, which we cannot: the maximum
+    // offset depends on the wrapped output's height, and that is only known
+    // here. Clamping here is equivalent because the assignment writes the
+    // clamped value back into this.scrollOffset, and render() always follows
+    // the requestRender that handleInput issued — so `g`'s sentinel is replaced
+    // by a real offset before the next keypress reads it, and `j` after `g`
+    // moves one line down from the top.
     const maxOffset = Math.max(0, output.length - capacity);
-    if (this.scrollOffset > maxOffset) this.scrollOffset = maxOffset;
+    this.scrollOffset = clampOffset(this.scrollOffset, maxOffset);
 
     const end = output.length - this.scrollOffset;
     const visible = output.slice(Math.max(0, end - capacity), end);
@@ -604,15 +613,19 @@ class TerminalDetailView implements Component {
     lines.push(...body.slice(0, viewport));
 
     lines.push(border);
-    lines.push(
-      truncateToWidth(
-        theme.fg(
-          "dim",
-          `${configuredKeys(this.keybindings, "tui.select.cancel")} back · t stdout/stderr · x kill · ${configuredKeys(this.keybindings, "tui.editor.cursorUp")}/${configuredKeys(this.keybindings, "tui.editor.cursorDown")}/jk scroll · ${configuredKeys(this.keybindings, "tui.editor.pageUp")}/${configuredKeys(this.keybindings, "tui.editor.pageDown")} page · g/G top/bottom`,
-        ),
-        width,
-      ),
-    );
+    // Short enough to fit an 80-column terminal, so the close key — the way
+    // out — is never the part that falls off the end. A copy receipt outranks
+    // the scroll hints: it answers a question the reader just asked, and the
+    // hints are on screen every other moment.
+    const segments = [
+      `${configuredKeys(this.keybindings, "tui.select.cancel")} back`,
+      "t stdout/stderr",
+      "x kill",
+      ...(this.copyNote ? [] : ["j/k ^d/^u g/G scroll"]),
+      "y copy",
+      ...(this.copyNote ? [this.copyNote] : []),
+    ];
+    lines.push(truncateToWidth(theme.fg("dim", segments.join(" · ")), width));
     lines.push(border);
     return lines;
   }
