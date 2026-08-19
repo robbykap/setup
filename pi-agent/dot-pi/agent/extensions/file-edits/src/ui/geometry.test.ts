@@ -18,6 +18,7 @@ import { Theme } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
 import { parseUnifiedPatch } from "../diff.ts";
 import { createFileEditStore, type FileEditStore } from "../store.ts";
+import { openerOf } from "../../../shared/tui-kit/paint.ts";
 import { FilePicker } from "./picker.ts";
 import { DiffViewer } from "./viewer.ts";
 
@@ -136,6 +137,27 @@ test("the picker is the same rectangle whatever the file count", () => {
     assert.equal(lines.length, EXPECTED_LINES, `${count} files`);
     assertExact(lines, 100, `picker with ${count} files`);
   }
+});
+
+test("the selected row carries the selection background, and only it", () => {
+  const picker = new FilePicker(
+    stubTui(),
+    theme,
+    keybindings,
+    storeWith(3),
+    { query: "", index: 1 },
+    () => {},
+  );
+  const lines = picker.render(100);
+  const opener = openerOf((text) => theme.bg("selectedBg", text));
+  assert.ok(opener.length > 0, "the theme produced no selection background");
+
+  const filled = lines.filter((line) => line.includes(opener));
+  assert.equal(filled.length, 1, "exactly one row should be highlighted");
+  // Two lines of chrome above the body, and index 1 with a short list that
+  // starts at row 0.
+  assert.equal(filled[0], lines[3]);
+  assertExact(lines, 100, "picker with a selection fill");
 });
 
 test("a filter matching nothing still fills the rectangle", () => {

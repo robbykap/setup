@@ -22,6 +22,7 @@ import {
   outerLine,
   topBorder,
 } from "../../../shared/tui-kit/frame.ts";
+import { paintSelected } from "../../../shared/tui-kit/paint.ts";
 import {
   createPickerState,
   filterChanges,
@@ -190,10 +191,13 @@ export class FilePicker implements Component {
         continue;
       }
       const selected = start + index === this.state.index;
-      const marker = selected ? theme.fg("accent", "› ") : "  ";
-      // inner - 2 leaves room for the marker; bodyRow pads the remainder.
-      const body = renderPickerRow(change, inner - 2, theme, now);
-      lines.push(bodyRow(theme, width, marker + body));
+      const marker = selected ? theme.fg("accent", "❯ ") : "  ";
+      // inner - 2 leaves room for the marker; the selection fill (or bodyRow's
+      // own pad) covers the remainder of the row.
+      const body = marker + renderPickerRow(change, inner - 2, theme, now);
+      lines.push(
+        bodyRow(theme, width, selected ? paintSelected(body, inner, theme) : body),
+      );
     }
 
     lines.push(bottomBorder(theme, width));

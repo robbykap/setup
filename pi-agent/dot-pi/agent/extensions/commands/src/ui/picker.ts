@@ -22,6 +22,7 @@ import {
   outerLine,
   topBorder,
 } from "../../../shared/tui-kit/frame.ts";
+import { paintSelected } from "../../../shared/tui-kit/paint.ts";
 import {
   createPickerState,
   filterRecords,
@@ -189,9 +190,12 @@ export class CommandPicker implements Component {
         continue;
       }
       const selected = start + index === this.state.index;
-      const marker = selected ? theme.fg("accent", "› ") : "  ";
+      const marker = selected ? theme.fg("accent", "❯ ") : "  ";
+      // inner - 2 leaves room for the marker; the selection fill (or bodyRow's
+      // own pad) covers the remainder of the row.
+      const body = marker + renderPickerRow(record, inner - 2, theme, now);
       lines.push(
-        bodyRow(theme, width, marker + renderPickerRow(record, inner - 2, theme, now)),
+        bodyRow(theme, width, selected ? paintSelected(body, inner, theme) : body),
       );
     }
 
