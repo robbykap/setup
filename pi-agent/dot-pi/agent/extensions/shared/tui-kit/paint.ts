@@ -11,8 +11,9 @@
  * leaves the background standing and so goes un-chased. `theme.bg` is a
  * different story: it closes with `\x1b[49m`, which clears the fill for the
  * remainder of the row, so fillLine chases that as well as the full `\x1b[0m`.
- * The full resets come from paintIcon and from syntax-highlighted code pasted
- * into a row.
+ * The full resets come from paintIcon. Syntax-highlighted code is not a
+ * source: pi's highlightCode emits only truecolor `\x1b[38;2;…m` openers
+ * closed by `\x1b[39m`, so it passes through a fill untouched.
  */
 
 import type { Theme } from "@earendil-works/pi-coding-agent";

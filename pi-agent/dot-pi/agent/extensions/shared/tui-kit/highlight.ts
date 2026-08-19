@@ -9,7 +9,8 @@
  * throw or a count mismatch degrades to plain lines too. An unknown language
  * under a live theme comes back as pi's own code-block-tinted lines rather
  * than plain ones — fine, because the preserved line count is the contract
- * callers actually rely on.
+ * callers actually rely on. The count guard is defensive: no current SDK path
+ * trips it.
  */
 
 import {
