@@ -392,11 +392,16 @@ export default function askUser(pi: ExtensionAPI) {
       return new Text(text, 0, 0);
     },
 
-    renderResult(result, _options, theme, _context) {
+    renderResult(result, _options, theme, context) {
       const details = result.details as AskUserDetails | undefined;
       if (!details) {
         const first = result.content[0];
-        return new Text(first?.type === "text" ? first.text : "", 0, 0);
+        const text = first?.type === "text" ? first.text : "";
+        return new Text(
+          context.isError ? theme.fg("error", `✗ ${text}`) : text,
+          0,
+          0,
+        );
       }
 
       if (details.cancelled || details.answer === null) {

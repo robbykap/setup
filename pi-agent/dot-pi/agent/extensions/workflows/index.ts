@@ -740,7 +740,7 @@ export default function workflows(pi: ExtensionAPI) {
           : { phases: [] };
       let text =
         `${paintIcon(UI_ICONS.agent)} ` +
-        theme.fg("toolTitle", theme.bold("workflow ")) +
+        theme.bold(theme.fg("text", "workflow ")) +
         theme.fg("accent", (meta as WorkflowMeta).name ?? "(script)");
       if (args.background) text += theme.fg("dim", " (background)");
       const description = (meta as WorkflowMeta).description;
@@ -753,12 +753,13 @@ export default function workflows(pi: ExtensionAPI) {
       return new Text(text, 0, 0);
     },
 
-    renderResult(result, { expanded }, theme) {
+    renderResult(result, { expanded }, theme, context) {
       const details = result.details as WorkflowDetails | undefined;
       if (!details) {
         const first = result.content[0];
+        const text = first?.type === "text" ? first.text : "(no output)";
         return new Text(
-          first?.type === "text" ? first.text : "(no output)",
+          context.isError ? theme.fg("error", `✗ ${text}`) : text,
           0,
           0,
         );
@@ -768,7 +769,7 @@ export default function workflows(pi: ExtensionAPI) {
       const settled = done + failed;
       const elapsed = formatElapsed(details.startedAt, details.finishedAt);
       let header =
-        `${paintIcon(UI_ICONS.agent)} ${theme.fg(statusColor(details.status), SQUARE)} ${theme.fg("toolTitle", theme.bold("workflow "))}` +
+        `${theme.fg(statusColor(details.status), SQUARE)} ${theme.bold(theme.fg("text", "workflow "))}` +
         `${theme.fg("accent", details.name ?? details.runId)} ` +
         theme.fg(
           "dim",

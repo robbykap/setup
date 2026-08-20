@@ -330,8 +330,13 @@ export default function fileSearchTools(pi: ExtensionAPI) {
       return new Text(text, 0, 0);
     },
 
-    renderResult(result, { expanded, isPartial }, theme) {
+    renderResult(result, { expanded, isPartial }, theme, context) {
       if (isPartial) return new Text(theme.fg("warning", "Searching..."), 0, 0);
+      if (context.isError) {
+        const first = result.content[0];
+        const reason = first?.type === "text" ? first.text : "search failed";
+        return new Text(theme.fg("error", `✗ ${reason}`), 0, 0);
+      }
       const details = result.details;
       if (!details || details.matchCount === 0) {
         return new Text(theme.fg("dim", "No files found"), 0, 0);
@@ -404,8 +409,13 @@ export default function fileSearchTools(pi: ExtensionAPI) {
       return new Text(text, 0, 0);
     },
 
-    renderResult(result, { expanded, isPartial }, theme) {
+    renderResult(result, { expanded, isPartial }, theme, context) {
       if (isPartial) return new Text(theme.fg("warning", "Searching..."), 0, 0);
+      if (context.isError) {
+        const first = result.content[0];
+        const reason = first?.type === "text" ? first.text : "search failed";
+        return new Text(theme.fg("error", `✗ ${reason}`), 0, 0);
+      }
       const details = result.details;
       if (!details || details.outputLines === 0) {
         return new Text(theme.fg("dim", "No matches found"), 0, 0);
