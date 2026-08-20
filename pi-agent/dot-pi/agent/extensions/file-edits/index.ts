@@ -99,6 +99,20 @@ function absolutePathOf(cwd: string, target: string): string {
   return path.isAbsolute(target) ? target : path.join(cwd, target);
 }
 
+/**
+ * Whether a tool about to write should snapshot the file first.
+ *
+ * Only when this session has never touched it. A file the store already knows
+ * has a baseline one way or another — captured when we first wrote to it, or,
+ * for history replayed after a /reload, waiting at the pinned commit. Taking a
+ * fresh snapshot there would quietly rebase the diff onto the middle of the
+ * session, which is what a reload used to do: three edits in, the panel showed
+ * the last one.
+ */
+export function shouldSnapshot(known: FileChange | undefined): boolean {
+  return known === undefined;
+}
+
 /** Line count the way read itself counts (pi's truncateHead convention):
  * a trailing newline is not an extra empty line. */
 function countTextLines(text: string): number {
@@ -377,10 +391,10 @@ export default function (pi: ExtensionAPI) {
       async execute(toolCallId, params, signal, onUpdate, executeCtx) {
         // Before the tool writes: this is the only moment the file's
         // pre-session state still exists anywhere.
-        baselines.capture(
-          storeKeyFor(ctx.cwd, params.path),
-          absolutePathOf(ctx.cwd, params.path),
-        );
+        const key = storeKeyFor(ctx.cwd, params.path);
+        if (shouldSnapshot(store.get(key))) {
+          baselines.capture(key, absolutePathOf(ctx.cwd, params.path));
+        }
         return executeAndRecord({
           toolCallId,
           params,
@@ -472,10 +486,10 @@ export default function (pi: ExtensionAPI) {
       // is where they get it.
       renderShell: "self",
       async execute(toolCallId, params, signal, onUpdate, executeCtx) {
-        baselines.capture(
-          storeKeyFor(ctx.cwd, params.path),
-          absolutePathOf(ctx.cwd, params.path),
-        );
+        const key = storeKeyFor(ctx.cwd, params.path);
+        if (shouldSnapshot(store.get(key))) {
+          baselines.capture(key, absolutePathOf(ctx.cwd, params.path));
+        }
         return executeAndRecord({
           toolCallId,
           params,
