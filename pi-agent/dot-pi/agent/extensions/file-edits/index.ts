@@ -32,6 +32,7 @@ import {
   createEditToolDefinition,
   createReadToolDefinition,
   createWriteToolDefinition,
+  getAgentDir,
   type ReadToolDetails,
 } from "@earendil-works/pi-coding-agent";
 import { formatFilesStatus } from "./src/status.ts";
@@ -39,6 +40,17 @@ import { createBaselineStore, nodeBaselineIo } from "./src/baseline.ts";
 import type { FileChange } from "./src/domain.ts";
 import { blobAtRef, diffAgainstRef, resolveHeadSha } from "./src/git-diff.ts";
 import { resolveChange, resolutionNote } from "./src/resolve.ts";
+import {
+  availableEditors,
+  buildLaunch,
+  editorConfigPath,
+  nodeEditorIo,
+  parseEditorCommand,
+  readEditorConfig,
+  writeEditorConfig,
+  type EditorConfig,
+} from "./src/ide.ts";
+import type { FileOpener } from "./src/ui/opener.ts";
 import { failedCallPath, failedChange, failureReason } from "./src/failure.ts";
 import { observeChildFiles } from "./src/observe.ts";
 import { storeKeyFor } from "./src/paths.ts";
@@ -171,6 +183,71 @@ export default function (pi: ExtensionAPI) {
       store.resolveHunks(key, { hunks: [], added: 0, removed: 0 });
     }
     return resolutionNote(resolution);
+  };
+
+  const editorIo = nodeEditorIo();
+  /** Resolved per use rather than cached: /ide can change it mid-session, and
+   * a stale command is worse than a second file read. */
+  const configFile = () => {
+    try {
+      return editorConfigPath(getAgentDir());
+    } catch {
+      return editorConfigPath();
+    }
+  };
+
+  const opener: FileOpener = {
+    configureRequested: false,
+    open(relativePath, line) {
+      const config = readEditorConfig(editorIo, configFile());
+      if (!config) return "unconfigured";
+      const launch = buildLaunch(
+        config,
+        absolutePathOf(sessionCwd, relativePath),
+        line,
+      );
+      const failure = editorIo.launch(launch.command, launch.args);
+      if (failure) {
+        ui?.notify(`Could not launch ${config.command}: ${failure}`, "error");
+        return "failed";
+      }
+      return "opened";
+    },
+  };
+
+  const OTHER_COMMAND = "Other command…";
+
+  /** The chooser behind `o` and /ide. Only editors actually on PATH are
+   * offered, because a list of things that are not installed is a list of ways
+   * to fail. */
+  const configureEditor = async (ctx: ExtensionContext) => {
+    if (!ctx.hasUI) return;
+    const found = availableEditors(editorIo);
+    const labels = [
+      ...found.map((editor) => `${editor.label} (${editor.command})`),
+      OTHER_COMMAND,
+    ];
+    const picked = await ctx.ui.select("Open files in which editor?", labels);
+    if (!picked) return;
+
+    let config: EditorConfig | null = null;
+    if (picked === OTHER_COMMAND) {
+      const typed = await ctx.ui.input(
+        "Editor command ({path} and {line} are substituted)",
+        "code --goto {path}:{line}",
+      );
+      config = typed ? parseEditorCommand(typed) : null;
+    } else {
+      config = found[labels.indexOf(picked)] ?? null;
+    }
+    if (!config) return;
+
+    const file = configFile();
+    if (writeEditorConfig(editorIo, file, config)) {
+      ctx.ui.notify(`Files will open in ${config.command} — saved to ${file}`, "info");
+    } else {
+      ctx.ui.notify(`Could not write ${file}`, "error");
+    }
   };
 
   const updateStatus = () => {
@@ -500,7 +577,22 @@ export default function (pi: ExtensionAPI) {
     description: "Browse files changed in this session",
     handler: async (_args, ctx) => {
       if (ctx.mode !== "tui") return;
-      await browseChangedFiles(ctx, store, ctx.cwd, viewerState, resolve);
+      await browseChangedFiles(
+        ctx,
+        store,
+        ctx.cwd,
+        viewerState,
+        resolve,
+        opener,
+        configureEditor,
+      );
+    },
+  });
+
+  pi.registerCommand("ide", {
+    description: "Choose the editor /files opens with",
+    handler: async (_args, ctx) => {
+      await configureEditor(ctx);
     },
   });
 
@@ -508,7 +600,15 @@ export default function (pi: ExtensionAPI) {
     description: "Browse changed files",
     handler: async (ctx) => {
       if (ctx.mode !== "tui") return;
-      await browseChangedFiles(ctx, store, ctx.cwd, viewerState, resolve);
+      await browseChangedFiles(
+        ctx,
+        store,
+        ctx.cwd,
+        viewerState,
+        resolve,
+        opener,
+        configureEditor,
+      );
     },
   });
 }

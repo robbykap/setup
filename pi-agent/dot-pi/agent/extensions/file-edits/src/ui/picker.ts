@@ -36,6 +36,7 @@ import {
   renderPickerRow,
   type PickerState,
 } from "./picker-rows.ts";
+import { firstChangedLine, requestOpen, type FileOpener } from "./opener.ts";
 
 function configuredKeys(
   keybindings: KeybindingsManager,
@@ -51,6 +52,7 @@ export class FilePicker implements Component {
   private keybindings: KeybindingsManager;
   private store: FileEditStore;
   private state: PickerState;
+  private opener: FileOpener | undefined;
   private done: (value: string | null) => void;
 
   private closed = false;
@@ -62,6 +64,7 @@ export class FilePicker implements Component {
     keybindings: KeybindingsManager,
     store: FileEditStore,
     state: PickerState,
+    opener: FileOpener | undefined,
     done: (value: string | null) => void,
   ) {
     this.tui = tui;
@@ -69,6 +72,7 @@ export class FilePicker implements Component {
     this.keybindings = keybindings;
     this.store = store;
     this.state = state;
+    this.opener = opener;
     this.done = done;
     this.unsubscribe = store.subscribe(() => this.tui.requestRender());
   }
@@ -105,6 +109,15 @@ export class FilePicker implements Component {
     if (this.keybindings.matches(data, "tui.select.confirm")) {
       const picked = rows[this.state.index];
       if (picked) this.close(picked.path);
+      return;
+    }
+    // Before the printable-character branch below, which would otherwise read
+    // this as a filter keystroke.
+    if (data === "o") {
+      const picked = rows[this.state.index];
+      if (picked && requestOpen(this.opener, picked.path, firstChangedLine(picked))) {
+        this.close(null);
+      }
       return;
     }
     if (this.keybindings.matches(data, "tui.select.up")) {
@@ -231,7 +244,7 @@ export class FilePicker implements Component {
         width,
         theme.fg(
           "dim",
-          `  ${configuredKeys(this.keybindings, "tui.select.up")}/${configuredKeys(this.keybindings, "tui.select.down")} select · ${configuredKeys(this.keybindings, "tui.select.confirm")} open diff · type to filter · ${configuredKeys(this.keybindings, "tui.select.cancel")} close`,
+          `  ${configuredKeys(this.keybindings, "tui.select.up")}/${configuredKeys(this.keybindings, "tui.select.down")} select · ${configuredKeys(this.keybindings, "tui.select.confirm")} open diff · o ide · ${configuredKeys(this.keybindings, "tui.select.cancel")} close`,
         ),
       ),
     );
@@ -245,6 +258,7 @@ export async function openFilePicker(
   ctx: ExtensionContext,
   store: FileEditStore,
   state: PickerState,
+  opener?: FileOpener,
 ): Promise<string | null> {
   if (store.size() === 0) {
     ctx.ui.notify("No files changed yet", "info");
@@ -252,7 +266,7 @@ export async function openFilePicker(
   }
   return ctx.ui.custom<string | null>(
     (tui, theme, keybindings, done) =>
-      new FilePicker(tui, theme, keybindings, store, state, done),
+      new FilePicker(tui, theme, keybindings, store, state, opener, done),
     {
       overlay: true,
       overlayOptions: { anchor: "center", width: "100%", maxHeight: "100%" },
@@ -275,11 +289,25 @@ export async function browseChangedFiles(
   cwd: string,
   viewerState: ViewerState = createViewerState(),
   resolve?: (path: string) => string | undefined,
+  opener?: FileOpener,
+  configureEditor?: (ctx: ExtensionContext) => Promise<void>,
 ) {
   const pickerState = createPickerState();
+  /** An overlay closed to make room for the editor chooser; run it, and put
+   * the user back where they were. */
+  const configured = async () => {
+    if (!opener?.configureRequested) return false;
+    opener.configureRequested = false;
+    await configureEditor?.(ctx);
+    return true;
+  };
+
   while (true) {
-    const picked = await openFilePicker(ctx, store, pickerState);
-    if (!picked) return;
+    const picked = await openFilePicker(ctx, store, pickerState, opener);
+    if (!picked) {
+      if (await configured()) continue;
+      return;
+    }
     pickerState.path = picked;
 
     let current: string | null = picked;
@@ -295,7 +323,9 @@ export async function browseChangedFiles(
         cwd,
         paths,
         resolve,
+        opener,
       );
+      if (!exit && (await configured())) continue;
       current = exit ? exit.next : null;
       if (current) pickerState.path = current;
     }

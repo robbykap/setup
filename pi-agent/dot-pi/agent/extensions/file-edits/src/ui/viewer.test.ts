@@ -194,6 +194,7 @@ function viewerFor(
     { mode },
     ["src/a.ts"],
     undefined,
+    undefined,
     () => {},
   );
 }
@@ -217,6 +218,7 @@ function renderAt(width: number, mode: ViewMode): string[] {
     "src/a.ts",
     { mode },
     ["src/a.ts"],
+    undefined,
     undefined,
     () => {},
   );

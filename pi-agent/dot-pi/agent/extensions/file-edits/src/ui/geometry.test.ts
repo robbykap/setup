@@ -152,6 +152,7 @@ for (const width of [100, 90, 72, 60]) {
       keybindings,
       storeWith(3),
       { query: "", index: 0 },
+      undefined,
       () => {},
     );
     const lines = picker.render(width);
@@ -168,6 +169,7 @@ test("the picker is the same rectangle whatever the file count", () => {
       keybindings,
       storeWith(count),
       { query: "", index: 0 },
+      undefined,
       () => {},
     );
     const lines = picker.render(100);
@@ -183,6 +185,7 @@ test("the selected row carries the selection background, and only it", () => {
     keybindings,
     storeWith(3),
     { query: "", index: 1 },
+    undefined,
     () => {},
   );
   const lines = picker.render(100);
@@ -203,6 +206,7 @@ test("an unfiltered list is grouped under labelled rules", () => {
     keybindings,
     mixedStore(),
     { query: "", index: 0 },
+    undefined,
     () => {},
   );
   const lines = picker.render(100);
@@ -228,6 +232,7 @@ test("grouping still highlights exactly one row, the selected one", () => {
     keybindings,
     store,
     { query: "", index },
+    undefined,
     () => {},
   );
   const lines = picker.render(100);
@@ -245,6 +250,7 @@ test("a filtered list is flat: the filter replaces the grouping", () => {
     keybindings,
     mixedStore(),
     { query: "src", index: 0 },
+    undefined,
     () => {},
   );
   const lines = picker.render(100);
@@ -260,6 +266,7 @@ test("a filter matching nothing still fills the rectangle", () => {
     keybindings,
     storeWith(3),
     { query: "zzzzzzz", index: 0 },
+    undefined,
     () => {},
   );
   const lines = picker.render(100);
@@ -281,6 +288,7 @@ for (const width of [100, 90, 72, 60]) {
         "src/file0.ts",
         { mode },
         ["src/file0.ts", "src/file1.ts"],
+        undefined,
         undefined,
         () => {},
       );
@@ -307,6 +315,7 @@ test("a file with no diff yet still fills the rectangle", () => {
     { mode: "stacked" },
     ["docs/x.md"],
     undefined,
+    undefined,
     () => {},
   );
   const lines = viewer.render(100);
@@ -325,10 +334,97 @@ test("scrolling to the bottom keeps the rectangle intact", () => {
     { mode: "stacked" },
     ["src/file0.ts"],
     undefined,
+    undefined,
     () => {},
   );
   for (let index = 0; index < 100; index += 1) viewer.handleInput("j");
   const lines = viewer.render(100);
   assert.equal(lines.length, EXPECTED_LINES);
   assertExact(lines, 100, "viewer scrolled to the end");
+});
+
+// --- `o`, the way out to an editor ------------------------------------------
+
+function recordingOpener(outcome: "opened" | "unconfigured") {
+  const calls: Array<{ path: string; line: number }> = [];
+  return {
+    opener: {
+      configureRequested: false,
+      open(path: string, line: number) {
+        calls.push({ path, line });
+        return outcome;
+      },
+    },
+    calls,
+  };
+}
+
+test("`o` in the picker opens the selected file, not the filter", () => {
+  // `o` is a printable character, and the branch that extends the filter is
+  // the one it would otherwise fall into.
+  const { opener, calls } = recordingOpener("opened");
+  const state = { query: "", index: 0 };
+  const picker = new FilePicker(
+    stubTui(),
+    theme,
+    keybindings,
+    storeWith(3),
+    state,
+    opener,
+    () => {},
+  );
+
+  picker.handleInput("o");
+
+  assert.equal(state.query, "", "the filter swallowed the key");
+  assert.equal(calls.length, 1);
+  // Most-recently-changed first, so the cursor starts on file0.
+  assert.equal(calls[0]!.path, "src/file0.ts");
+});
+
+test("`o` in the viewer opens the file it is showing", () => {
+  const { opener, calls } = recordingOpener("opened");
+  const viewer = new DiffViewer(
+    stubTui(),
+    theme,
+    keybindings,
+    storeWith(2),
+    "src/file0.ts",
+    { mode: "stacked" },
+    ["src/file0.ts"],
+    undefined,
+    opener,
+    () => {},
+  );
+
+  viewer.handleInput("o");
+
+  assert.deepEqual(
+    calls.map((call) => call.path),
+    ["src/file0.ts"],
+  );
+});
+
+test("an unconfigured editor closes the viewer so the chooser can open", () => {
+  const { opener } = recordingOpener("unconfigured");
+  let exit: unknown = "not called";
+  const viewer = new DiffViewer(
+    stubTui(),
+    theme,
+    keybindings,
+    storeWith(2),
+    "src/file0.ts",
+    { mode: "stacked" },
+    ["src/file0.ts"],
+    undefined,
+    opener,
+    (value) => {
+      exit = value;
+    },
+  );
+
+  viewer.handleInput("o");
+
+  assert.equal(exit, null, "the viewer stayed open");
+  assert.equal(opener.configureRequested, true);
 });

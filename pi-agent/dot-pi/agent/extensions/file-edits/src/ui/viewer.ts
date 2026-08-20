@@ -45,6 +45,7 @@ import {
   topBorder,
 } from "../../../shared/tui-kit/frame.ts";
 import { siblingPath } from "./navigation.ts";
+import { firstChangedLine, requestOpen, type FileOpener } from "./opener.ts";
 
 function configuredKeys(
   keybindings: KeybindingsManager,
@@ -244,6 +245,7 @@ export class DiffViewer implements Component {
   private state: ViewerState;
   private paths: ReadonlyArray<string>;
   private note: string | undefined;
+  private opener: FileOpener | undefined;
   private done: (value: ViewerExit) => void;
 
   private offset = 0;
@@ -267,6 +269,7 @@ export class DiffViewer implements Component {
     state: ViewerState,
     paths: ReadonlyArray<string>,
     note: string | undefined,
+    opener: FileOpener | undefined,
     done: (value: ViewerExit) => void,
   ) {
     this.tui = tui;
@@ -277,6 +280,7 @@ export class DiffViewer implements Component {
     this.state = state;
     this.paths = paths;
     this.note = note;
+    this.opener = opener;
     this.done = done;
     this.unsubscribe = store.subscribe(() => this.tui.requestRender());
   }
@@ -325,6 +329,14 @@ export class DiffViewer implements Component {
     if (data === "s") {
       this.state.mode = this.state.mode === "split" ? "stacked" : "split";
       this.tui.requestRender();
+      return;
+    }
+    if (data === "o") {
+      // Closing is how an unconfigured editor gets its chooser: the loop
+      // outside owns the screen once this overlay lets go of it.
+      if (requestOpen(this.opener, this.path, firstChangedLine(this.change()))) {
+        this.close(null);
+      }
       return;
     }
     if (data === "n" || data === "p") {
@@ -524,8 +536,8 @@ export class DiffViewer implements Component {
     // Short enough to fit an 80-column terminal, so the close key — the way
     // out — is never the part that falls off the end.
     const legend =
-      `  s split · n/p file · j/k ^d/^u g/G scroll` +
-      ` · y copy · ${configuredKeys(this.keybindings, "tui.select.cancel")}/q close` +
+      `  s split · n/p file · j/k g/G scroll` +
+      ` · y copy · o ide · ${configuredKeys(this.keybindings, "tui.select.cancel")}/q close` +
       (this.copyNote ? ` · ${this.copyNote}` : "");
     lines.push(outerLine(width, theme.fg("dim", legend)));
 
@@ -545,6 +557,7 @@ export async function openDiffViewer(
   cwd: string,
   paths: ReadonlyArray<string> = store.list().map((change) => change.path),
   resolve?: (path: string) => string | undefined,
+  opener?: FileOpener,
 ): Promise<ViewerExit> {
   // Resolution happens once, on open, and its account of an empty result is
   // carried into the panel: the store holds hunks, not reasons.
@@ -560,6 +573,7 @@ export async function openDiffViewer(
         state,
         paths,
         note,
+        opener,
         done,
       ),
     {
