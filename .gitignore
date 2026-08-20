@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .worktrees/
+
+# JetBrains IDE state: machine-local, and workspace.xml carries local paths.
+.idea/
