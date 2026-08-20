@@ -38,6 +38,7 @@ import {
   EmptyRow,
   LiveCallRow,
   LivePeekRow,
+  RestoredRow,
   delegationContext,
 } from "./src/render/row.ts";
 import { boxedDelegation, shellBg } from "../shared/tui-kit/boxed.ts";
@@ -97,6 +98,19 @@ export default function (pi: ExtensionAPI) {
     return row;
   };
 
+  const restoredRow = (
+    lastComponent: unknown,
+    command: string,
+    output: string,
+    failed: boolean,
+    theme: Theme,
+  ) => {
+    const row =
+      lastComponent instanceof RestoredRow ? lastComponent : new RestoredRow();
+    row.update(command, output, failed, theme);
+    return row;
+  };
+
   pi.on("session_start", (_event, ctx: ExtensionContext) => {
     ui = ctx.mode === "tui" ? ctx.ui : undefined;
     stopChannel = observeCommandChannel(pi.events, store);
@@ -138,42 +152,59 @@ export default function (pi: ExtensionAPI) {
         // Settled: the result slot draws the whole row.
         if (record) return noCall();
         // Still running: our own live header instead of the boxed built-in line.
-        return liveCall(
-          context.lastComponent,
-          typeof args.command === "string" ? args.command : "",
-          theme,
-        );
+        if (context.isPartial) {
+          return liveCall(
+            context.lastComponent,
+            typeof args.command === "string" ? args.command : "",
+            theme,
+          );
+        }
+        // Restored from a saved session: execute never ran, so there is no
+        // record, but it is not running either. The result slot draws the
+        // whole row.
+        return noCall();
       },
       renderResult(result, options, theme, context) {
         const expanded = options.expanded || context.expanded;
         if (expanded) {
+          // Known cosmetic drift: pi frames both slots in one Box(1,1); our two
+          // boxes (paddingY 1 call / 0 result) show a doubled blank line
+          // between command and output. Accepted trade-off.
           return boxedDelegation(
             context,
             0,
-            shellBg(theme, {
-              isPartial: options.isPartial,
-              isError: context.isError,
-            }),
+            shellBg(theme, context),
             delegationContext,
             (ctx) => baseBash.renderResult!(result, options, theme, ctx),
           );
         }
+        // While the command streamed AND was expanded, the built-in may have
+        // started its 1Hz elapsed-time interval (bash.js:369-380), and the
+        // final, non-partial call is where it clears it. Run it for every
+        // settled render so the cleanup is an invariant rather than a
+        // coincidence, then throw the component it returns away.
+        if (!options.isPartial) {
+          baseBash.renderResult!(
+            result,
+            options,
+            theme,
+            delegationContext(context),
+          );
+        }
         const record = calls.get(context.toolCallId);
+        if (record) return collapsedRow(context.lastComponent, record, theme);
         // Streaming: a dim peek at the tail of what has arrived so far.
-        if (options.isPartial || !record) {
+        if (options.isPartial) {
           return livePeek(context.lastComponent, resultText(result), theme);
         }
-        // Not a rendering call: while the command streamed AND was expanded, the
-        // built-in may have started its 1Hz elapsed-time interval
-        // (bash.js:369-380), and the final call is where it clears it. Run it
-        // for the cleanup, then throw the component it returns away.
-        baseBash.renderResult!(
-          result,
-          options,
+        // Restored from a saved session: no record, but it is settled.
+        return restoredRow(
+          context.lastComponent,
+          typeof context.args?.command === "string" ? context.args.command : "",
+          resultText(result),
+          context.isError,
           theme,
-          delegationContext(context),
         );
-        return collapsedRow(context.lastComponent, record, theme);
       },
     };
     pi.registerTool(bashTool);

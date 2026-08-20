@@ -9,6 +9,7 @@ import {
   EmptyRow,
   LiveCallRow,
   LivePeekRow,
+  RestoredRow,
   delegationContext,
   renderCollapsedRow,
 } from "./row.ts";
@@ -207,7 +208,31 @@ test("delegation hides our components from the built-in renderer", () => {
   assert.equal(ours.lastComponent, undefined);
   const empty = delegationContext({ lastComponent: new EmptyRow() });
   assert.equal(empty.lastComponent, undefined);
+  const live = delegationContext({ lastComponent: new LiveCallRow() });
+  assert.equal(live.lastComponent, undefined);
+  const peek = delegationContext({ lastComponent: new LivePeekRow() });
+  assert.equal(peek.lastComponent, undefined);
+  const restored = delegationContext({ lastComponent: new RestoredRow() });
+  assert.equal(restored.lastComponent, undefined);
 
   const theirs = new Container();
   assert.equal(delegationContext({ lastComponent: theirs }).lastComponent, theirs);
+});
+
+test("restored row shows the command and outcome, no duration or line count", () => {
+  const row = new RestoredRow();
+  row.update("npm test", "all good\n", false, theme);
+  const lines = row.render(60);
+  assert.ok(lines[0]!.includes(UI_ICONS.terminal.glyph));
+  assert.ok(lines[0]!.includes("npm test"));
+  assert.ok(lines[0]!.includes("done"));
+});
+
+test("a failed restored row shows failed and a deeper peek, no box", () => {
+  const row = new RestoredRow();
+  row.update("npm test", "one\ntwo\nthree\nfour", true, realTheme);
+  const lines = row.render(60);
+  assert.ok(lines[0]!.includes("failed"));
+  assert.equal(lines.length, 4);
+  for (const line of lines) assert.ok(!line.includes("\x1b[48"), line);
 });

@@ -105,6 +105,40 @@ export class LivePeekRow extends Container {
   }
 }
 
+/** The result slot for a call restored from a saved session: execute never
+ * ran, so there is no record — no duration, no line count, just what the
+ * saved result carried. */
+export class RestoredRow extends Container {
+  private command = "";
+  private output = "";
+  private failed = false;
+  private theme: Theme | undefined;
+
+  update(command: string, output: string, failed: boolean, theme: Theme): void {
+    this.command = command;
+    this.output = output;
+    this.failed = failed;
+    this.theme = theme;
+  }
+
+  override render(width: number): string[] {
+    if (!this.theme) return [];
+    const theme = this.theme;
+    return renderToolRow(
+      {
+        icon: UI_ICONS.terminal,
+        title: paintCommand(this.command, theme),
+        right: this.failed
+          ? theme.fg("error", "✗ failed")
+          : theme.fg("success", "✓ done"),
+        peek: tailLines(this.output, this.failed ? FAILURE_PEEK_LINES : PEEK_LINES),
+      },
+      width,
+      theme,
+    );
+  }
+}
+
 /**
  * The context to hand the built-in renderer when delegating. A slot's
  * `lastComponent` is whatever that slot returned last time, so after a
@@ -119,6 +153,7 @@ export function delegationContext<T extends { lastComponent: unknown }>(
     context.lastComponent instanceof EmptyRow ||
     context.lastComponent instanceof LiveCallRow ||
     context.lastComponent instanceof LivePeekRow ||
+    context.lastComponent instanceof RestoredRow ||
     context.lastComponent instanceof BoxedDelegate;
   return ours ? { ...context, lastComponent: undefined } : context;
 }
@@ -136,7 +171,7 @@ function outcome(record: CommandRecord, theme: Theme) {
 }
 
 /** The command painted the way every bash row titles itself. */
-function paintCommand(command: string, theme: Theme): string {
+export function paintCommand(command: string, theme: Theme): string {
   const summary = summarizeCommand(command);
   return (
     theme.bold(theme.fg("text", oneLine(summary.text))) +

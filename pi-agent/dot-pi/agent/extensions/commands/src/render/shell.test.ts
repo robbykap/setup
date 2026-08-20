@@ -69,6 +69,25 @@ test("a running bash call has no box around it", () => {
   assert.ok(flat.includes("linking…"));
 });
 
+test("a restored bash call settles instead of running forever", () => {
+  // Session restore rebuilds the component and delivers the saved result
+  // directly: no partial update ever arrives, and execute never ran, so
+  // there is no record either.
+  const component = bashComponent();
+  component.updateResult(
+    { content: [{ type: "text", text: "line one\nline two" }], isError: false },
+    false,
+  );
+  const lines = component.render(60);
+  const flat = lines.join("\n");
+  for (const line of lines) {
+    assert.ok(!line.includes("\x1b[48"), JSON.stringify(line));
+  }
+  assert.ok(!flat.includes("running"));
+  assert.ok(flat.includes("npm test"));
+  assert.ok(flat.includes("done"));
+});
+
 test("expanded bash gets the box back", () => {
   const component = bashComponent();
   component.setExpanded(true);
