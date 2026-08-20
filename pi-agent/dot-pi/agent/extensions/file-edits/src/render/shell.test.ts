@@ -265,6 +265,27 @@ test("read: a truncated result counts from details.truncation, not the text", ()
   assert.ok(joined.includes("read 2 lines of 500 (truncated)"), joined);
 });
 
+test("read: a user-limited read counts only the lines read, not the continuation notice", () => {
+  const component = readRow("call-read-limited", { path: "big.ts", limit: 5 });
+  component.setArgsComplete();
+  component.updateResult(
+    {
+      content: [
+        {
+          type: "text",
+          text: "line1\nline2\nline3\nline4\nline5\n\n[95 more lines in file. Use offset=6 to continue.]",
+        },
+      ],
+      isError: false,
+    },
+    false,
+  );
+  const lines = component.render(60);
+  const joined = lines.join("\n");
+  assert.ok(joined.includes("read 5 lines of 100 (truncated)"), joined);
+  assert.ok(!joined.includes("read 7 lines"), joined);
+});
+
 test("read: an image result says so and does not crash", () => {
   const component = readRow("call-read-image", { path: "a.png" });
   component.setArgsComplete();

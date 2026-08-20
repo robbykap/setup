@@ -73,16 +73,29 @@ function countTextLines(text: string): number {
   return lines.length;
 }
 
+/** The continuation notice read.js appends when a user `limit` stops a read
+ * before end-of-file without setting `details.truncation` (read.js:238-243),
+ * so the fallback below can strip it instead of counting it as read lines. */
+const LIMITED_READ_NOTICE = /\n\n\[(\d+) more lines in file\. Use offset=\d+ to continue\.\]$/;
+
 /** "read N lines", honest about what actually reached the model: a
  * truncated read counts from `details.truncation` (which also carries the
  * total, for the "(truncated)" marker) rather than the displayed text,
- * which read.js appends a continuation notice to (read.js:232,243). */
+ * which read.js appends a continuation notice to (read.js:232,243). A
+ * limit-stopped read has no `details.truncation` either, so its notice is
+ * stripped before counting (read.js:238-243). */
 function readLineSummary(text: string, details: ReadToolDetails | undefined): string {
   const truncation = details?.truncation;
-  const shown = truncation ? truncation.outputLines : countTextLines(text);
+  if (truncation) {
+    const label = truncation.outputLines === 1 ? "line" : "lines";
+    const marker = truncation.truncated ? ` of ${truncation.totalLines} (truncated)` : "";
+    return `read ${truncation.outputLines} ${label}${marker}`;
+  }
+  const noticeMatch = text.match(LIMITED_READ_NOTICE);
+  const body = noticeMatch ? text.slice(0, noticeMatch.index) : text;
+  const shown = countTextLines(body);
   const label = shown === 1 ? "line" : "lines";
-  const marker =
-    truncation?.truncated ? ` of ${truncation.totalLines} (truncated)` : "";
+  const marker = noticeMatch ? ` of ${shown + Number(noticeMatch[1])} (truncated)` : "";
   return `read ${shown} ${label}${marker}`;
 }
 
