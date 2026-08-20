@@ -36,6 +36,7 @@ import { Type, type Static } from "typebox";
 import { formatActivityStatus } from "../shared/activity-status.ts";
 import { CHILD_FILE_CHANNEL } from "../shared/dashboard-state.ts";
 import { COMMAND_CHANNEL } from "../shared/command-log.ts";
+import { UI_ICONS, paintIcon } from "../shared/tui-kit/icons.ts";
 import { createWorkflowPersistence, persistWorkflowJson } from "./artifacts.ts";
 import { RunController } from "./controller.ts";
 import { sessionWorkflowRunIds, showWorkflowDashboard } from "./dashboard.ts";
@@ -369,6 +370,7 @@ export default function workflows(pi: ExtensionAPI) {
 
   pi.registerTool({
     name: "workflow",
+    renderShell: "self",
     label: "Workflow",
     description: WORKFLOW_TOOL_DESCRIPTION,
     promptSnippet: WORKFLOW_PROMPT_SNIPPET,
@@ -737,6 +739,7 @@ export default function workflows(pi: ExtensionAPI) {
           ? extractMeta(args.script)
           : { phases: [] };
       let text =
+        `${paintIcon(UI_ICONS.agent)} ` +
         theme.fg("toolTitle", theme.bold("workflow ")) +
         theme.fg("accent", (meta as WorkflowMeta).name ?? "(script)");
       if (args.background) text += theme.fg("dim", " (background)");
@@ -765,7 +768,7 @@ export default function workflows(pi: ExtensionAPI) {
       const settled = done + failed;
       const elapsed = formatElapsed(details.startedAt, details.finishedAt);
       let header =
-        `${theme.fg(statusColor(details.status), SQUARE)} ${theme.fg("toolTitle", theme.bold("workflow "))}` +
+        `${paintIcon(UI_ICONS.agent)} ${theme.fg(statusColor(details.status), SQUARE)} ${theme.fg("toolTitle", theme.bold("workflow "))}` +
         `${theme.fg("accent", details.name ?? details.runId)} ` +
         theme.fg(
           "dim",
