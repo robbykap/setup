@@ -24,7 +24,7 @@ const FAILED_MARKER = "✗ failed";
 
 /** The directory tells you where; the basename tells you what. Only the
  * second one earns full contrast — the same split the footer uses. */
-function paintPath(path: string, theme: Theme) {
+export function paintPath(path: string, theme: Theme) {
   const cut = path.lastIndexOf("/");
   if (cut < 0) return theme.bold(theme.fg("text", path));
   return (

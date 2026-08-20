@@ -106,3 +106,67 @@ test("edit and write collapse to the same lines", () => {
   // names, and both name a.ts.
   assert.deepEqual(renderSettledError("write", ARGS.write), renderSettledError("edit", ARGS.edit));
 });
+
+test("read: a settled collapsed call has no box around it", () => {
+  const component = new ToolExecutionComponent(
+    "read",
+    "call-read",
+    { path: "a.ts" },
+    {},
+    tools.get("read") as never,
+    { requestRender() {} } as never,
+    CWD,
+  );
+  component.setArgsComplete();
+  component.updateResult(
+    { content: [{ type: "text", text: "1: hello\n2: world" }], isError: false },
+    false,
+  );
+  const lines = component.render(60);
+  for (const line of lines) {
+    assert.ok(!line.includes("\x1b[48"), JSON.stringify(line));
+  }
+  assert.ok(lines.join("\n").includes("a.ts"));
+});
+
+test("read: an expanded call delegates to the built-in and still renders", () => {
+  const component = new ToolExecutionComponent(
+    "read",
+    "call-read-expanded",
+    { path: "a.ts" },
+    {},
+    tools.get("read") as never,
+    { requestRender() {} } as never,
+    CWD,
+  );
+  component.setArgsComplete();
+  component.setExpanded(true);
+  component.updateResult(
+    { content: [{ type: "text", text: "1: hello\n2: world" }], isError: false },
+    false,
+  );
+  const lines = component.render(60);
+  assert.ok(lines.join("\n").includes("hello"));
+});
+
+test("read: a settled collapsed error has no box and shows the reason", () => {
+  const component = new ToolExecutionComponent(
+    "read",
+    "call-read-error",
+    { path: "missing.ts" },
+    {},
+    tools.get("read") as never,
+    { requestRender() {} } as never,
+    CWD,
+  );
+  component.setArgsComplete();
+  component.updateResult(
+    { content: [{ type: "text", text: "ENOENT: no such file" }], isError: true },
+    false,
+  );
+  const lines = component.render(60);
+  for (const line of lines) {
+    assert.ok(!line.includes("\x1b[48"), JSON.stringify(line));
+  }
+  assert.ok(lines.join("\n").includes("ENOENT"));
+});

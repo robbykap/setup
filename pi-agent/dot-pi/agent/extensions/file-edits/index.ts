@@ -29,8 +29,10 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import {
   createEditToolDefinition,
+  createReadToolDefinition,
   createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { formatFilesStatus } from "./src/status.ts";
 import type { FileChange } from "./src/domain.ts";
 import { failedCallPath, failedChange, failureReason } from "./src/failure.ts";
@@ -47,14 +49,20 @@ import {
   EmptyRow,
   NoteRow,
   delegationContext,
+  paintPath,
 } from "./src/render/row.ts";
 import { boxedDelegation, shellBg } from "../shared/tui-kit/boxed.ts";
+import { iconFor, paintIcon } from "../shared/tui-kit/icons.ts";
 import { browseChangedFiles } from "./src/ui/picker.ts";
 import { createViewerState } from "./src/ui/viewer.ts";
 
 const STATUS_KEY = "file-edits";
 
 type Theme = ExtensionContext["ui"]["theme"];
+
+/** Fold an error reason to one line: the collapsed row has no room for a
+ * multi-line trace, and read's own errors are usually one sentence anyway. */
+const oneLineOf = (text: string) => text.replace(/\s+/g, " ").trim();
 
 export default function (pi: ExtensionAPI) {
   const store = createFileEditStore();
@@ -283,6 +291,51 @@ export default function (pi: ExtensionAPI) {
       },
     };
     pi.registerTool(writeTool);
+
+    const baseRead = createReadToolDefinition(ctx.cwd);
+    const readTool: typeof baseRead = {
+      ...baseRead,
+      // The built-in sets no shell (read.js has no renderShell), so without
+      // this pi paints its own colored Box around our plain rows
+      // (tool-execution.js:50). Expanded and streaming views still delegate
+      // to the built-in, which renders plain Text and needs no shell back.
+      renderShell: "self",
+      renderCall(args, theme, context) {
+        // Expanded is the built-in's own view. It caches a plain pi-tui
+        // `Text` on lastComponent and only ever calls `setText` on it
+        // (read.js:265,274) — our collapsed rows are Text too, so handing
+        // context straight through (rather than hiding lastComponent) is
+        // harmless either way; a probe confirmed no stale content or crash
+        // across expanded/collapsed transitions.
+        if (context.expanded) {
+          return baseRead.renderCall!(args, theme, context);
+        }
+        const path = typeof args.path === "string" ? args.path : "";
+        return new Text(
+          `${paintIcon(iconFor(path))} ${paintPath(path, theme)}`,
+          0,
+          0,
+        );
+      },
+      renderResult(result, options, theme, context) {
+        if (options.expanded || context.expanded || options.isPartial) {
+          return baseRead.renderResult!(result, options, theme, context);
+        }
+        const first = result.content[0];
+        if (context.isError) {
+          const reason = first?.type === "text" ? first.text : "failed";
+          return new Text(theme.fg("error", `\u2717 ${oneLineOf(reason ?? "failed")}`), 0, 0);
+        }
+        // Image reads return a text note plus an { type: "image" } block
+        // (read.js:191-196) \u2014 no line count applies.
+        if (result.content.some((block) => block.type === "image")) {
+          return new Text(theme.fg("dim", "   \u2502 read image"), 0, 0);
+        }
+        const lines = first?.type === "text" ? first.text.split("\n").length : 0;
+        return new Text(theme.fg("dim", `   \u2502 read ${lines} lines`), 0, 0);
+      },
+    };
+    pi.registerTool(readTool);
 
     updateStatus();
   });
