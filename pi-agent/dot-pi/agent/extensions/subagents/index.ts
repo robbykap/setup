@@ -46,7 +46,7 @@ import {
 import { Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { UI_ICONS } from "../shared/tui-kit/icons.ts";
-import { toolCallTitle } from "../shared/tui-kit/row.ts";
+import { plainResultText, toolCallTitle } from "../shared/tui-kit/row.ts";
 import { deriveBtwTitle, isModelVisible } from "./src/by-the-way.ts";
 import {
   formatElapsed,
@@ -460,14 +460,8 @@ export default function (pi: ExtensionAPI) {
         0,
       );
     },
-    renderResult(result, _options, theme, context) {
-      const first = result.content[0];
-      const text = first?.type === "text" ? first.text : "";
-      return new Text(
-        context.isError ? theme.fg("error", `✗ ${text}`) : text,
-        0,
-        0,
-      );
+    renderResult(result, options, theme, context) {
+      return new Text(plainResultText(result, theme, context, options), 0, 0);
     },
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const manager = await getManager();
@@ -576,14 +570,8 @@ export default function (pi: ExtensionAPI) {
         0,
       );
     },
-    renderResult(result, _options, theme, context) {
-      const first = result.content[0];
-      const text = first?.type === "text" ? first.text : "";
-      return new Text(
-        context.isError ? theme.fg("error", `✗ ${text}`) : text,
-        0,
-        0,
-      );
+    renderResult(result, options, theme, context) {
+      return new Text(plainResultText(result, theme, context, options), 0, 0);
     },
     async execute(_toolCallId, params, signal, onUpdate) {
       const manager = await getManager();
@@ -687,14 +675,8 @@ export default function (pi: ExtensionAPI) {
         0,
       );
     },
-    renderResult(result, _options, theme, context) {
-      const first = result.content[0];
-      const text = first?.type === "text" ? first.text : "";
-      return new Text(
-        context.isError ? theme.fg("error", `✗ ${text}`) : text,
-        0,
-        0,
-      );
+    renderResult(result, options, theme, context) {
+      return new Text(plainResultText(result, theme, context, options), 0, 0);
     },
     async execute(_toolCallId, params, signal) {
       const manager = await getManager();
@@ -762,14 +744,8 @@ export default function (pi: ExtensionAPI) {
         0,
       );
     },
-    renderResult(result, _options, theme, context) {
-      const first = result.content[0];
-      const text = first?.type === "text" ? first.text : "";
-      return new Text(
-        context.isError ? theme.fg("error", `✗ ${text}`) : text,
-        0,
-        0,
-      );
+    renderResult(result, options, theme, context) {
+      return new Text(plainResultText(result, theme, context, options), 0, 0);
     },
     async execute(_toolCallId, params) {
       const manager = await getManager();
@@ -816,14 +792,8 @@ export default function (pi: ExtensionAPI) {
         0,
       );
     },
-    renderResult(result, _options, theme, context) {
-      const first = result.content[0];
-      const text = first?.type === "text" ? first.text : "";
-      return new Text(
-        context.isError ? theme.fg("error", `✗ ${text}`) : text,
-        0,
-        0,
-      );
+    renderResult(result, options, theme, context) {
+      return new Text(plainResultText(result, theme, context, options), 0, 0);
     },
     async execute() {
       const manager = await getManager();

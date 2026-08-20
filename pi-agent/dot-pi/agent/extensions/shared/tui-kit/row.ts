@@ -6,7 +6,7 @@
  * command, dim-directory/bold-basename path) before handing it in.
  */
 
-import type { Theme } from "@earendil-works/pi-coding-agent";
+import { keyHint, type Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { paintIcon, type FileIcon } from "./icons.ts";
 
@@ -77,4 +77,66 @@ export function toolCallTitle(
   let text = `${paintIcon(icon)} ${theme.bold(theme.fg("text", name))}`;
   if (detail) text += ` ${theme.fg("muted", detail)}`;
   return text;
+}
+
+// Minimal ANSI/control stripper. pi's own sanitizers (stripAnsi,
+// sanitizeBinaryOutput) live in core/tools/render-utils and utils/shell,
+// neither of which the package exports, so this covers the same ground:
+// CSI sequences, OSC strings (window titles, hyperlinks), and stray C0
+// control bytes that would otherwise desync the terminal renderer.
+// eslint-disable-next-line no-control-regex
+const OSC_PATTERN = /\x1b\].*?(?:\x07|\x1b\\)/g;
+// eslint-disable-next-line no-control-regex
+const CSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
+
+function sanitizeResultText(text: string): string {
+  const stripped = text.replace(OSC_PATTERN, "").replace(CSI_PATTERN, "");
+  // eslint-disable-next-line no-control-regex
+  return stripped.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
+}
+
+const COLLAPSED_LINE_CAP = 10;
+
+/** The plain result body for tools with nothing richer to show: sanitized
+ * text, capped when collapsed, red with a ✗ when the call failed. What pi's
+ * default fallback did before renderShell: "self" — minus the box, plus the
+ * error marker the box's red background used to carry. */
+export function plainResultText(
+  result: {
+    readonly content: ReadonlyArray<{
+      readonly type: string;
+      readonly text?: string;
+    }>;
+  },
+  theme: Theme,
+  context: { readonly isError: boolean },
+  options: { readonly expanded: boolean },
+): string {
+  const joined = sanitizeResultText(
+    result.content
+      .filter((block) => block.type === "text")
+      .map((block) => block.text ?? "")
+      .join("\n"),
+  );
+  if (!joined) return "";
+
+  const allLines = joined.split("\n");
+  const lines = options.expanded
+    ? allLines
+    : allLines.slice(0, COLLAPSED_LINE_CAP);
+  const hidden = allLines.length - lines.length;
+
+  const color = context.isError ? "error" : "toolOutput";
+  const painted = lines.map((line, i) =>
+    theme.fg(color, context.isError && i === 0 ? `✗ ${line}` : line),
+  );
+  if (hidden > 0) {
+    painted.push(
+      theme.fg(
+        "dim",
+        `… (${hidden} more lines, `,
+      ) + keyHint("app.tools.expand", "to expand)"),
+    );
+  }
+  return painted.join("\n");
 }

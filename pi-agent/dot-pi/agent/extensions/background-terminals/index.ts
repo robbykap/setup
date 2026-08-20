@@ -29,7 +29,7 @@ import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { UI_ICONS } from "../shared/tui-kit/icons.ts";
-import { toolCallTitle } from "../shared/tui-kit/row.ts";
+import { plainResultText, toolCallTitle } from "../shared/tui-kit/row.ts";
 import type { TerminalSnapshot } from "./src/domain.ts";
 import { TerminalManager, type TerminalManagerShape } from "./src/manager.ts";
 import {
@@ -218,26 +218,26 @@ export default function (pi: ExtensionAPI) {
     }),
     renderShell: "self",
     renderCall(args, theme) {
-      const detail = [
+      // A heredoc or multi-line command must not multiply transcript rows;
+      // fold to one line, then cap so a giant command doesn't dominate it.
+      const folded = [
         typeof args.title === "string" ? args.title : undefined,
-        typeof args.command === "string" ? args.command : undefined,
+        typeof args.command === "string"
+          ? args.command.replace(/\s+/g, " ").trim()
+          : undefined,
       ]
         .filter(Boolean)
         .join(" · ");
+      const detail =
+        folded.length > 80 ? `${folded.slice(0, 79)}…` : folded;
       return new Text(
         toolCallTitle(UI_ICONS.terminal, "bg_start", detail || undefined, theme),
         0,
         0,
       );
     },
-    renderResult(result, _options, theme, context) {
-      const first = result.content[0];
-      const text = first?.type === "text" ? first.text : "";
-      return new Text(
-        context.isError ? theme.fg("error", `✗ ${text}`) : text,
-        0,
-        0,
-      );
+    renderResult(result, options, theme, context) {
+      return new Text(plainResultText(result, theme, context, options), 0, 0);
     },
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const manager = await getManager();
@@ -286,14 +286,8 @@ export default function (pi: ExtensionAPI) {
         0,
       );
     },
-    renderResult(result, _options, theme, context) {
-      const first = result.content[0];
-      const text = first?.type === "text" ? first.text : "";
-      return new Text(
-        context.isError ? theme.fg("error", `✗ ${text}`) : text,
-        0,
-        0,
-      );
+    renderResult(result, options, theme, context) {
+      return new Text(plainResultText(result, theme, context, options), 0, 0);
     },
     async execute(_toolCallId, params) {
       const manager = await getManager();
@@ -335,14 +329,8 @@ export default function (pi: ExtensionAPI) {
         0,
       );
     },
-    renderResult(result, _options, theme, context) {
-      const first = result.content[0];
-      const text = first?.type === "text" ? first.text : "";
-      return new Text(
-        context.isError ? theme.fg("error", `✗ ${text}`) : text,
-        0,
-        0,
-      );
+    renderResult(result, options, theme, context) {
+      return new Text(plainResultText(result, theme, context, options), 0, 0);
     },
     async execute() {
       const manager = await getManager();
@@ -383,14 +371,8 @@ export default function (pi: ExtensionAPI) {
         0,
       );
     },
-    renderResult(result, _options, theme, context) {
-      const first = result.content[0];
-      const text = first?.type === "text" ? first.text : "";
-      return new Text(
-        context.isError ? theme.fg("error", `✗ ${text}`) : text,
-        0,
-        0,
-      );
+    renderResult(result, options, theme, context) {
+      return new Text(plainResultText(result, theme, context, options), 0, 0);
     },
     async execute(_toolCallId, params, signal) {
       const manager = await getManager();

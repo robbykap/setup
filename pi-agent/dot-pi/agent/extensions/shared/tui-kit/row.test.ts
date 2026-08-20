@@ -5,10 +5,14 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Theme } from "@earendil-works/pi-coding-agent";
+import { initTheme, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { UI_ICONS } from "./icons.ts";
-import { peekLine, renderToolRow, toolCallTitle } from "./row.ts";
+import { peekLine, plainResultText, renderToolRow, toolCallTitle } from "./row.ts";
+
+// plainResultText's more-lines hint goes through keyHint(), which reads the
+// global theme singleton and throws until it has been initialized.
+initTheme();
 
 /** A REAL Theme, not a stub — see frame.test.ts for why. */
 const FG_COLORS = [
@@ -106,4 +110,91 @@ test("toolCallTitle paints icon, bold name, and detail", () => {
 
 test("peekLine fits the width", () => {
   assert.ok(visibleWidth(peekLine("hello", 20, theme)) <= 20);
+});
+
+function textResult(text: string) {
+  return { content: [{ type: "text", text }] };
+}
+
+test("plainResultText strips ANSI and control bytes", () => {
+  const dirty = "\x1b[2J\x1b[31mhello\x1b[0m\x07 world\x1b]0;title\x07";
+  const text = plainResultText(
+    textResult(dirty),
+    theme,
+    { isError: false },
+    { expanded: true },
+  );
+  // The kit's own theme.fg painting is allowed to add escapes; none of the
+  // input's clear-screen/color/BEL/OSC-title bytes may survive into it.
+  assert.ok(!text.includes("\x1b[2J"));
+  assert.ok(!text.includes("\x1b[31m"));
+  assert.ok(!text.includes("\x07"));
+  assert.ok(!text.includes("title"));
+  assert.ok(text.includes("hello world"));
+});
+
+test("plainResultText caps collapsed output at 10 lines with a hint", () => {
+  const body = Array.from({ length: 25 }, (_, i) => `line ${i}`).join("\n");
+  const text = plainResultText(
+    textResult(body),
+    theme,
+    { isError: false },
+    { expanded: false },
+  );
+  const lines = text.split("\n");
+  assert.equal(lines.length, 11);
+  assert.ok(lines.at(-1)!.includes("more lines"));
+  assert.ok(text.includes("line 9"));
+  assert.ok(!text.includes("line 10\n") && !text.includes("line 10)"));
+});
+
+test("plainResultText shows everything when expanded", () => {
+  const body = Array.from({ length: 25 }, (_, i) => `line ${i}`).join("\n");
+  const text = plainResultText(
+    textResult(body),
+    theme,
+    { isError: false },
+    { expanded: true },
+  );
+  assert.equal(text.split("\n").length, 25);
+  assert.ok(text.includes("line 24"));
+  assert.ok(!text.includes("more lines"));
+});
+
+test("plainResultText joins all text content blocks", () => {
+  const result = {
+    content: [
+      { type: "text", text: "first" },
+      { type: "image", data: "ignored" },
+      { type: "text", text: "second" },
+    ],
+  };
+  const text = plainResultText(
+    result as never,
+    theme,
+    { isError: false },
+    { expanded: true },
+  );
+  assert.ok(text.includes("first"));
+  assert.ok(text.includes("second"));
+});
+
+test("plainResultText marks errors with a leading ✗ and error paint", () => {
+  const text = plainResultText(
+    textResult("boom"),
+    theme,
+    { isError: true },
+    { expanded: true },
+  );
+  assert.ok(text.includes("✗ boom"));
+});
+
+test("plainResultText paints success lines with toolOutput", () => {
+  const text = plainResultText(
+    textResult("ok"),
+    theme,
+    { isError: false },
+    { expanded: true },
+  );
+  assert.equal(text, theme.fg("toolOutput", "ok"));
 });
