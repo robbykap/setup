@@ -114,6 +114,7 @@ export const UI_ICONS = {
   check: glyph(0xf00c, GREEN),
   cross: glyph(0xf00d, RED),
   question: glyph(0xf128, BLUE), // nf-fa-question
+  search: glyph(0xf002, SKY), // nf-fa-search
 } as const;
 
 /** Every icon in the module, for the width invariant test. */

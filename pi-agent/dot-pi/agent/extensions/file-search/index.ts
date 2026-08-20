@@ -54,6 +54,7 @@ import {
   COMMAND_CHANNEL,
   type CommandLogEvent,
 } from "../shared/command-log.ts";
+import { UI_ICONS, paintIcon } from "../shared/tui-kit/icons.ts";
 
 export function makeBinaryInitializers(
   binDir: string,
@@ -274,6 +275,7 @@ export default function fileSearchTools(pi: ExtensionAPI) {
 
   pi.registerTool<ReturnType<typeof fdParameters>, FdToolDetails>({
     name: "fd",
+    renderShell: "self",
     label: "Find Files",
     description: FD_TOOL_DESCRIPTION,
     promptSnippet: FD_PROMPT_SNIPPET,
@@ -314,7 +316,7 @@ export default function fileSearchTools(pi: ExtensionAPI) {
     },
 
     renderCall(args, theme) {
-      let text = theme.fg("toolTitle", theme.bold("fd "));
+      let text = `${paintIcon(UI_ICONS.search)} ${theme.bold(theme.fg("text", "fd"))} `;
       text += theme.fg("accent", args.pattern ? `"${args.pattern}"` : "(all)");
       if (args.path) text += theme.fg("muted", ` in ${args.path}`);
       const flags = [
@@ -347,6 +349,7 @@ export default function fileSearchTools(pi: ExtensionAPI) {
 
   pi.registerTool<ReturnType<typeof rgParameters>, RgToolDetails>({
     name: "rg",
+    renderShell: "self",
     label: "Search Content",
     description: RG_TOOL_DESCRIPTION,
     promptSnippet: RG_PROMPT_SNIPPET,
@@ -387,7 +390,7 @@ export default function fileSearchTools(pi: ExtensionAPI) {
     },
 
     renderCall(args, theme) {
-      let text = theme.fg("toolTitle", theme.bold("rg "));
+      let text = `${paintIcon(UI_ICONS.search)} ${theme.bold(theme.fg("text", "rg"))} `;
       text += theme.fg("accent", `"${args.pattern}"`);
       if (args.path) text += theme.fg("muted", ` in ${args.path}`);
       const flags = [
