@@ -35,6 +35,7 @@ import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 import { formatActivityStatus } from "../shared/activity-status.ts";
 import { CHILD_FILE_CHANNEL } from "../shared/dashboard-state.ts";
+import type { ChildFile } from "../shared/dashboard-state.ts";
 import { COMMAND_CHANNEL } from "../shared/command-log.ts";
 import { UI_ICONS, paintIcon } from "../shared/tui-kit/icons.ts";
 import { errorLine } from "../shared/tui-kit/row.ts";
@@ -569,9 +570,9 @@ export default function workflows(pi: ExtensionAPI) {
                 record.transcript = progress.transcript;
                 emit();
               },
-              onFileTouched: (path: string) =>
+              onFileTouched: (file: ChildFile) =>
                 pi.events.emit(CHILD_FILE_CHANNEL, {
-                  path,
+                  ...file,
                   cwd: ctx.cwd,
                   origin: { kind: "workflow", label },
                 }),

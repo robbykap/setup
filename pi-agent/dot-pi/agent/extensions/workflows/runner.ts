@@ -33,6 +33,9 @@ import {
 } from "../shared/child-session.ts";
 import { copyRegisteredProviders } from "../shared/child-providers.ts";
 import { createToolCallTimeoutGuard } from "../shared/tool-call-timeout.ts";
+// The child-file vocabulary lives with the event that carries it, so both
+// child runners speak it without either extension depending on the other.
+import { patchOf, type ChildFile } from "../shared/dashboard-state.ts";
 import type { CommandTool } from "../shared/command-log.ts";
 import {
   describeToolCommand,
@@ -101,7 +104,7 @@ export interface RunAgentOptions {
   signal?: AbortSignal;
   onProgress?: (progress: AgentProgress) => void;
   /** Report a file the child touched, so the parent can list it. */
-  onFileTouched?: (path: string) => void;
+  onFileTouched?: (file: ChildFile) => void;
   /** Report a shell command the child ran, for the parent's command log. */
   onCommandRun?: (command: ChildCommandReport) => void;
   /** Test-only override for the per-tool execution timeout. */
@@ -288,11 +291,13 @@ function reportCommand(
 
 /** Announce a file this child touched, but only once its edit succeeds: the
  * path is captured at the start event and reported at the matching end
- * event, keyed by toolCallId so a failed edit is never reported. */
+ * event, keyed by toolCallId so a failed edit is never reported. The end
+ * event is also where the patch is, and the parent needs it: git alone cannot
+ * describe a child's work once a commit has moved HEAD past it. */
 function reportTouchedFile(
   event: ToolTimingEvent,
   touchedByToolCallId: Map<string, string>,
-  onFileTouched: ((path: string) => void) | undefined,
+  onFileTouched: ((file: ChildFile) => void) | undefined,
 ) {
   if (event.type === "tool_execution_start") {
     if (event.toolName !== "edit" && event.toolName !== "write") return;
@@ -302,7 +307,9 @@ function reportTouchedFile(
   }
   const touched = touchedByToolCallId.get(event.toolCallId);
   touchedByToolCallId.delete(event.toolCallId);
-  if (touched !== undefined && !event.isError) onFileTouched?.(touched);
+  if (touched !== undefined && !event.isError) {
+    onFileTouched?.({ path: touched, ...patchOf(event.result) });
+  }
 }
 
 function toolMetadata(

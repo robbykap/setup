@@ -78,7 +78,7 @@ import {
 } from "./src/registry-snapshot.ts";
 import { CHILD_FILE_CHANNEL } from "../shared/dashboard-state.ts";
 import { COMMAND_CHANNEL } from "../shared/command-log.ts";
-import type { ChildCommand } from "./src/domain.ts";
+import type { ChildCommand, ChildFile } from "./src/domain.ts";
 import { buildModelChoices } from "../shared/model-choices.ts";
 import { formatContextUtilization } from "./src/format.ts";
 import { formatSubagentsStatus } from "./src/status.ts";
@@ -508,9 +508,9 @@ export default function (pi: ExtensionAPI) {
               : undefined,
             inheritedThinkingLevel: pi.getThinkingLevel(),
             modelRegistry: ctx.modelRegistry,
-            onFileTouched: (path: string) =>
+            onFileTouched: (file: ChildFile) =>
               pi.events.emit(CHILD_FILE_CHANNEL, {
-                path,
+                ...file,
                 cwd,
                 origin: { kind: "subagent", id: title, name: title },
               }),
@@ -947,9 +947,9 @@ export default function (pi: ExtensionAPI) {
               : undefined,
             inheritedThinkingLevel: pi.getThinkingLevel(),
             modelRegistry: ctx.modelRegistry,
-            onFileTouched: (path: string) =>
+            onFileTouched: (file: ChildFile) =>
               pi.events.emit(CHILD_FILE_CHANNEL, {
-                path,
+                ...file,
                 cwd: ctx.cwd,
                 origin: { kind: "subagent", id: btwTitle, name: btwTitle },
               }),

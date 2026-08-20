@@ -99,12 +99,39 @@ export function isGitInfoState(value: unknown): value is GitInfoState {
 }
 
 /** A file changed by a child session (subagent or workflow), announced to the
- * parent so its picker can list it. The diff is not carried: tool_execution_end
- * has no details, so the viewer computes it against git HEAD on demand. */
+ * parent so its picker can list it. The child's own patch rides along when its
+ * tool produced one, because the parent cannot always reconstruct the diff
+ * itself: a commit made mid-session moves HEAD past the work, and a child may
+ * be running somewhere git cannot describe at all. */
 export const CHILD_FILE_CHANNEL = "dashboard:child-file";
+
+/** A file a child session edited: the path its tool named, plus that tool's
+ * own patch when it produced one. What both child runners — subagents and
+ * workflows — hand to their parent, and the payload half of the event below. */
+export interface ChildFile {
+  readonly path: string;
+  readonly patch?: string;
+}
+
+/**
+ * The unified patch an `edit` result carries (`EditToolDetails.patch`).
+ * `write` carries none, and a hook — or a tool we have never seen — can put
+ * anything at all there, so nothing but a non-empty string is taken.
+ * Returned as a spreadable object, so a caller never has to build a
+ * `ChildFile` with an explicit `patch: undefined`.
+ */
+export function patchOf(result: unknown): { patch?: string } {
+  const details = (result as { details?: { patch?: unknown } } | undefined)
+    ?.details;
+  const patch = details?.patch;
+  return typeof patch === "string" && patch.length > 0 ? { patch } : {};
+}
 
 export interface ChildFileEvent {
   readonly path: string;
+  /** The child's unified patch for this edit, when its tool produced one
+   * (`edit` does; `write` does not). */
+  readonly patch?: string;
   readonly origin:
     | { readonly kind: "subagent"; readonly id: string; readonly name: string }
     | { readonly kind: "workflow"; readonly label: string };
@@ -119,6 +146,9 @@ export function isChildFileEvent(value: unknown): value is ChildFileEvent {
   return (
     typeof candidate.path === "string" &&
     typeof candidate.origin === "object" &&
-    candidate.origin !== null
+    candidate.origin !== null &&
+    // Absent is valid, and has to stay valid: an emitter a version behind
+    // sends no patch at all, and its file still belongs in the picker.
+    (candidate.patch === undefined || typeof candidate.patch === "string")
   );
 }

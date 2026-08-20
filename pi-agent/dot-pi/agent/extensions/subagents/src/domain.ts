@@ -9,6 +9,12 @@
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { Data } from "effect";
 import type { CommandTool } from "../../shared/command-log.ts";
+// A child file means the same thing to every parent surface, so the shape
+// lives with the event that carries it rather than in one extension. Imported
+// as well as re-exported: `export ... from` binds nothing locally, and
+// ParentContext below needs the name.
+import type { ChildFile } from "../../shared/dashboard-state.ts";
+export type { ChildFile };
 
 /** A shell command a child session ran, as the parent needs to list it. The
  * output is the preview the child's tool event carried: no second capture. */
@@ -58,7 +64,7 @@ export interface ParentContext {
   readonly modelRegistry?: ModelRegistry;
   /** Report a file the child touched, so the parent can list it. Optional:
    * the backend must work without a parent that cares. */
-  readonly onFileTouched?: (path: string) => void;
+  readonly onFileTouched?: (file: ChildFile) => void;
   /** Report a shell command the child ran, for the parent's command log. */
   readonly onCommandRun?: (command: ChildCommand) => void;
 }

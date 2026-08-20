@@ -36,6 +36,7 @@ import type {
 } from "../domain.ts";
 import { SendError, SpawnError } from "../domain.ts";
 import { createToolCallTimeoutGuard } from "../../../shared/tool-call-timeout.ts";
+import { patchOf } from "../../../shared/dashboard-state.ts";
 import type { CommandTool } from "../../../shared/command-log.ts";
 import {
   describeToolCommand,
@@ -497,7 +498,13 @@ const makePiSession = (
           const touched = touchedByToolCallId.get(event.toolCallId);
           touchedByToolCallId.delete(event.toolCallId);
           if (touched !== undefined && !event.isError) {
-            task.parent.onFileTouched?.(touched);
+            // The patch travels with the path: the parent has no other way to
+            // learn what this edit did, and reconstructing it from git fails
+            // the moment the work is committed.
+            task.parent.onFileTouched?.({
+              path: touched,
+              ...patchOf(event.result),
+            });
           }
           const ran = commandByToolCallId.get(event.toolCallId);
           commandByToolCallId.delete(event.toolCallId);
