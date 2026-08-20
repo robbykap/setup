@@ -29,6 +29,7 @@ import {
   bottomBorder,
   topBorder,
 } from "../shared/tui-kit/frame.ts";
+import { UI_ICONS, paintIcon } from "../shared/tui-kit/icons.ts";
 import { paintSelected } from "../shared/tui-kit/paint.ts";
 
 const MIN_OPTIONS = 2;
@@ -104,6 +105,7 @@ function wrapText(text: string, width: number): string[] {
 export default function askUser(pi: ExtensionAPI) {
   pi.registerTool({
     name: "ask_user",
+    renderShell: "self",
     label: "Ask User",
     description: ASK_USER_TOOL_DESCRIPTION,
     promptSnippet: ASK_USER_PROMPT_SNIPPET,
@@ -376,10 +378,9 @@ export default function askUser(pi: ExtensionAPI) {
     },
 
     renderCall(args, theme, _context) {
-      let text = theme.fg("toolTitle", theme.bold("ask_user "));
-      text += theme.fg(
-        "muted",
-        typeof args.question === "string" ? args.question : "",
+      let text = `${paintIcon(UI_ICONS.question)} `;
+      text += theme.bold(
+        theme.fg("text", typeof args.question === "string" ? args.question : ""),
       );
       const opts = Array.isArray(args.options)
         ? (args.options as DisplayOption[])

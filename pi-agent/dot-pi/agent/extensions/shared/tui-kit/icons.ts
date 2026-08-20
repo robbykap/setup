@@ -113,6 +113,7 @@ export const UI_ICONS = {
   clock: glyph(0xf017, SUBTEXT),
   check: glyph(0xf00c, GREEN),
   cross: glyph(0xf00d, RED),
+  question: glyph(0xf128, BLUE), // nf-fa-question
 } as const;
 
 /** Every icon in the module, for the width invariant test. */
