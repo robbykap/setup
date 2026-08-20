@@ -1,8 +1,15 @@
 /**
- * Unified-patch parsing. Pure: no filesystem, no TUI. The edit tool already
- * hands us a standard patch in `details.patch`, so this only has to read it.
+ * Unified patches, read and written. Pure: no filesystem, no TUI.
+ *
+ * The edit tool already hands us a standard patch in `details.patch`, so most
+ * of this only has to read one. What nothing hands us is the diff between a
+ * file's session baseline and the file as it stands now — a `write` reports no
+ * patch at all, and a subagent's edits are only ever known after the fact — so
+ * `diffContents` computes that one, through the SDK's own generator rather
+ * than a second diff implementation that could disagree with the first.
  */
 
+import { generateUnifiedPatch } from "@earendil-works/pi-coding-agent";
 import type { DiffLine, Hunk } from "./domain.ts";
 
 export interface ParsedPatch {
@@ -74,6 +81,19 @@ export function parseUnifiedPatch(patch: string): ParsedPatch | null {
   flush();
 
   return hunks.length === 0 ? null : { hunks, added, removed };
+}
+
+/**
+ * Hunks between two whole file contents, for a diff nothing handed us a patch
+ * for. Identical contents yield null: the generator emits a header and no
+ * hunks for them, which `parseUnifiedPatch` already reads as nothing to show.
+ */
+export function diffContents(
+  path: string,
+  before: string,
+  after: string,
+): ParsedPatch | null {
+  return parseUnifiedPatch(generateUnifiedPatch(path, before, after, 3));
 }
 
 /** The hunk with the most changed lines — the one worth previewing. */

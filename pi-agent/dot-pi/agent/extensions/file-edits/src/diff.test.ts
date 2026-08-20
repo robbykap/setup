@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseUnifiedPatch, largestHunk, pairRows } from "./diff.ts";
+import {
+  diffContents,
+  parseUnifiedPatch,
+  largestHunk,
+  pairRows,
+} from "./diff.ts";
 
 const PATCH = `--- a/src/router.ts
 +++ b/src/router.ts
@@ -145,4 +150,43 @@ test("a multi-file patch splits into separate hunks", () => {
   assert.equal(parsed?.hunks.length, 2);
   assert.equal(parsed?.hunks[1]?.oldStart, 5);
   assert.equal(parsed?.added, 2);
+});
+
+// diffContents is the baseline-vs-disk half of the module: no tool hands us a
+// patch for a `write`, or for anything a subagent did.
+test("identical contents are not a diff", () => {
+  assert.equal(diffContents("a.ts", "one\ntwo\n", "one\ntwo\n"), null);
+});
+
+test("a replaced line is one hunk, counted once each way", () => {
+  const parsed = diffContents("a.ts", "one\ntwo\n", "one\nTWO\n");
+  assert.ok(parsed);
+  assert.equal(parsed.hunks.length, 1);
+  assert.equal(parsed.added, 1);
+  assert.equal(parsed.removed, 1);
+  const texts = parsed.hunks[0]!.lines.map((line) => line.text);
+  assert.ok(texts.includes("TWO"));
+  assert.ok(texts.includes("two"));
+});
+
+test("a file that did not exist reads as all additions", () => {
+  const parsed = diffContents("a.ts", "", "one\ntwo\n");
+  assert.equal(parsed?.added, 2);
+  assert.equal(parsed?.removed, 0);
+});
+
+test("an append at end of file only adds", () => {
+  const parsed = diffContents("a.ts", "one\n", "one\ntwo\n");
+  assert.equal(parsed?.added, 1);
+  assert.equal(parsed?.removed, 0);
+});
+
+test("content with no trailing newline still diffs", () => {
+  const parsed = diffContents("a.ts", "one", "two");
+  assert.equal(parsed?.added, 1);
+  assert.equal(parsed?.removed, 1);
+  // The "\\ No newline at end of file" marker annotates a line; it is not one.
+  assert.ok(
+    parsed!.hunks[0]!.lines.every((line) => !line.text.startsWith("No newline")),
+  );
 });
