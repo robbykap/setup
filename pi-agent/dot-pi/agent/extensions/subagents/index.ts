@@ -45,6 +45,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { UI_ICONS } from "../shared/tui-kit/icons.ts";
+import { toolCallTitle } from "../shared/tui-kit/row.ts";
 import { deriveBtwTitle, isModelVisible } from "./src/by-the-way.ts";
 import {
   formatElapsed,
@@ -445,6 +447,28 @@ export default function (pi: ExtensionAPI) {
         }),
       ),
     }),
+    renderShell: "self",
+    renderCall(args, theme) {
+      return new Text(
+        toolCallTitle(
+          UI_ICONS.agent,
+          "subagent_spawn",
+          typeof args.name === "string" ? args.name : undefined,
+          theme,
+        ),
+        0,
+        0,
+      );
+    },
+    renderResult(result, _options, theme, context) {
+      const first = result.content[0];
+      const text = first?.type === "text" ? first.text : "";
+      return new Text(
+        context.isError ? theme.fg("error", `✗ ${text}`) : text,
+        0,
+        0,
+      );
+    },
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const manager = await getManager();
 
@@ -543,6 +567,24 @@ export default function (pi: ExtensionAPI) {
         description: SUBAGENT_WAIT_PARAMETER_DESCRIPTIONS.ids,
       }),
     }),
+    renderShell: "self",
+    renderCall(args, theme) {
+      const detail = Array.isArray(args.ids) ? args.ids.join(", ") : undefined;
+      return new Text(
+        toolCallTitle(UI_ICONS.agent, "subagent_wait", detail, theme),
+        0,
+        0,
+      );
+    },
+    renderResult(result, _options, theme, context) {
+      const first = result.content[0];
+      const text = first?.type === "text" ? first.text : "";
+      return new Text(
+        context.isError ? theme.fg("error", `✗ ${text}`) : text,
+        0,
+        0,
+      );
+    },
     async execute(_toolCallId, params, signal, onUpdate) {
       const manager = await getManager();
       const ids = [...new Set(params.ids)];
@@ -636,6 +678,24 @@ export default function (pi: ExtensionAPI) {
         description: SUBAGENT_CANCEL_PARAMETER_DESCRIPTIONS.ids,
       }),
     }),
+    renderShell: "self",
+    renderCall(args, theme) {
+      const detail = Array.isArray(args.ids) ? args.ids.join(", ") : undefined;
+      return new Text(
+        toolCallTitle(UI_ICONS.agent, "subagent_cancel", detail, theme),
+        0,
+        0,
+      );
+    },
+    renderResult(result, _options, theme, context) {
+      const first = result.content[0];
+      const text = first?.type === "text" ? first.text : "";
+      return new Text(
+        context.isError ? theme.fg("error", `✗ ${text}`) : text,
+        0,
+        0,
+      );
+    },
     async execute(_toolCallId, params, signal) {
       const manager = await getManager();
       const ids = [...new Set(params.ids)];
@@ -689,6 +749,28 @@ export default function (pi: ExtensionAPI) {
         description: SUBAGENT_CHECK_PARAMETER_DESCRIPTIONS.id,
       }),
     }),
+    renderShell: "self",
+    renderCall(args, theme) {
+      return new Text(
+        toolCallTitle(
+          UI_ICONS.agent,
+          "subagent_check",
+          typeof args.id === "string" ? args.id : undefined,
+          theme,
+        ),
+        0,
+        0,
+      );
+    },
+    renderResult(result, _options, theme, context) {
+      const first = result.content[0];
+      const text = first?.type === "text" ? first.text : "";
+      return new Text(
+        context.isError ? theme.fg("error", `✗ ${text}`) : text,
+        0,
+        0,
+      );
+    },
     async execute(_toolCallId, params) {
       const manager = await getManager();
       const snap = manager.view.get(params.id);
@@ -726,6 +808,23 @@ export default function (pi: ExtensionAPI) {
     label: "List Subagents",
     description: SUBAGENT_LIST_TOOL_DESCRIPTION,
     parameters: Type.Object({}),
+    renderShell: "self",
+    renderCall(_args, theme) {
+      return new Text(
+        toolCallTitle(UI_ICONS.agent, "subagent_list", undefined, theme),
+        0,
+        0,
+      );
+    },
+    renderResult(result, _options, theme, context) {
+      const first = result.content[0];
+      const text = first?.type === "text" ? first.text : "";
+      return new Text(
+        context.isError ? theme.fg("error", `✗ ${text}`) : text,
+        0,
+        0,
+      );
+    },
     async execute() {
       const manager = await getManager();
       const subs = manager.view.list().filter(isModelVisible);

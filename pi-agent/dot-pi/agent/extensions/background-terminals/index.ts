@@ -28,6 +28,8 @@ import type {
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { UI_ICONS } from "../shared/tui-kit/icons.ts";
+import { toolCallTitle } from "../shared/tui-kit/row.ts";
 import type { TerminalSnapshot } from "./src/domain.ts";
 import { TerminalManager, type TerminalManagerShape } from "./src/manager.ts";
 import {
@@ -214,6 +216,29 @@ export default function (pi: ExtensionAPI) {
         }),
       ),
     }),
+    renderShell: "self",
+    renderCall(args, theme) {
+      const detail = [
+        typeof args.title === "string" ? args.title : undefined,
+        typeof args.command === "string" ? args.command : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return new Text(
+        toolCallTitle(UI_ICONS.terminal, "bg_start", detail || undefined, theme),
+        0,
+        0,
+      );
+    },
+    renderResult(result, _options, theme, context) {
+      const first = result.content[0];
+      const text = first?.type === "text" ? first.text : "";
+      return new Text(
+        context.isError ? theme.fg("error", `✗ ${text}`) : text,
+        0,
+        0,
+      );
+    },
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const manager = await getManager();
 
@@ -248,6 +273,28 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({
       id: Type.String({ description: BG_STATUS_PARAMETER_DESCRIPTIONS.id }),
     }),
+    renderShell: "self",
+    renderCall(args, theme) {
+      return new Text(
+        toolCallTitle(
+          UI_ICONS.terminal,
+          "bg_status",
+          typeof args.id === "string" ? args.id : undefined,
+          theme,
+        ),
+        0,
+        0,
+      );
+    },
+    renderResult(result, _options, theme, context) {
+      const first = result.content[0];
+      const text = first?.type === "text" ? first.text : "";
+      return new Text(
+        context.isError ? theme.fg("error", `✗ ${text}`) : text,
+        0,
+        0,
+      );
+    },
     async execute(_toolCallId, params) {
       const manager = await getManager();
       const snap = manager.view.get(params.id);
@@ -280,6 +327,23 @@ export default function (pi: ExtensionAPI) {
     label: "List Background Terminals",
     description: BG_LIST_TOOL_DESCRIPTION,
     parameters: Type.Object({}),
+    renderShell: "self",
+    renderCall(_args, theme) {
+      return new Text(
+        toolCallTitle(UI_ICONS.terminal, "bg_list", undefined, theme),
+        0,
+        0,
+      );
+    },
+    renderResult(result, _options, theme, context) {
+      const first = result.content[0];
+      const text = first?.type === "text" ? first.text : "";
+      return new Text(
+        context.isError ? theme.fg("error", `✗ ${text}`) : text,
+        0,
+        0,
+      );
+    },
     async execute() {
       const manager = await getManager();
       const terminals = manager.view.list();
@@ -310,6 +374,24 @@ export default function (pi: ExtensionAPI) {
         description: BG_KILL_PARAMETER_DESCRIPTIONS.ids,
       }),
     }),
+    renderShell: "self",
+    renderCall(args, theme) {
+      const detail = Array.isArray(args.ids) ? args.ids.join(", ") : undefined;
+      return new Text(
+        toolCallTitle(UI_ICONS.terminal, "bg_kill", detail, theme),
+        0,
+        0,
+      );
+    },
+    renderResult(result, _options, theme, context) {
+      const first = result.content[0];
+      const text = first?.type === "text" ? first.text : "";
+      return new Text(
+        context.isError ? theme.fg("error", `✗ ${text}`) : text,
+        0,
+        0,
+      );
+    },
     async execute(_toolCallId, params, signal) {
       const manager = await getManager();
       const ids = [...new Set(params.ids)];
