@@ -77,6 +77,17 @@ import {
   validateExplicitModel,
 } from "./src/registry-snapshot.ts";
 import { CHILD_FILE_CHANNEL } from "../shared/dashboard-state.ts";
+import {
+  historySessionId,
+  openSessionLog,
+  type SessionLog,
+} from "../shared/session-log.ts";
+import {
+  fromHistoryRecord,
+  toHistoryRecord,
+  withHistory,
+  type SubagentHistoryRecord,
+} from "./src/history.ts";
 import { COMMAND_CHANNEL } from "../shared/command-log.ts";
 import type { ChildCommand, ChildFile } from "./src/domain.ts";
 import { buildModelChoices } from "../shared/model-choices.ts";
@@ -291,6 +302,11 @@ export default function (pi: ExtensionAPI) {
   let ui: ExtensionUIContext | undefined;
   let unsubStatus: (() => void) | undefined;
   const resultDelivery = createDeferredResultDelivery<SubagentSnapshot>();
+  /** Opened at session_start, once the session id is known. */
+  let log: SessionLog<SubagentHistoryRecord> | undefined;
+  /** Subagents from an earlier segment of this session. They cannot be
+   * steered or aborted, so they live beside the manager rather than in it. */
+  let restored: ReadonlyArray<SubagentSnapshot> = [];
 
   const getRuntime = () => (runtime ??= createSubagentRuntime());
 
@@ -370,6 +386,11 @@ export default function (pi: ExtensionAPI) {
   };
 
   const onSettled = (snap: SubagentSnapshot, consumed: boolean) => {
+    // Settling is the one moment a subagent is both finished and still in
+    // memory, so it is where the session log is written. Before the origin
+    // branch below: a `by the way` subagent belongs in the history too.
+    const record = toHistoryRecord(snap);
+    if (record) log?.append(record);
     // A shutdown can settle children while disposing their scopes. Never
     // append into a session whose extension runtime is already closing.
     if (!sessionContext) return;
@@ -389,9 +410,40 @@ export default function (pi: ExtensionAPI) {
     if (sessionContext?.isIdle()) flushResults();
   };
 
-  pi.on("session_start", (_event, ctx) => {
+  pi.on("session_start", (event, ctx) => {
     sessionContext = ctx;
     if (ctx.hasUI) ui = ctx.ui;
+    try {
+      const current = ctx.sessionManager.getSessionId();
+      const history = historySessionId(
+        event.reason,
+        current,
+        event.previousSessionFile,
+      );
+      // Writes always go to the current session; only the read follows a fork
+      // back to where it came from.
+      log = openSessionLog<SubagentHistoryRecord>({
+        sessionId: current,
+        surface: "subagents",
+      });
+      if (!history) return;
+      const records =
+        history === current
+          ? log.readAll()
+          : openSessionLog<SubagentHistoryRecord>({
+              sessionId: history,
+              surface: "subagents",
+            }).readAll();
+      const byId = new Map<string, SubagentSnapshot>();
+      for (const value of records) {
+        const snapshot = fromHistoryRecord(value);
+        // Later records win: a subagent that was restarted was written twice.
+        if (snapshot) byId.set(snapshot.id, snapshot);
+      }
+      restored = [...byId.values()];
+    } catch {
+      // History is a convenience. A session that cannot read it still works.
+    }
   });
 
   pi.on("agent_settled", flushResults);
@@ -1009,14 +1061,17 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       const manager = await getManager();
-      if (manager.view.size() === 0) {
+      // Live subagents first, then whatever an earlier segment of this
+      // session left behind.
+      const view = withHistory(manager.view, restored);
+      if (view.size() === 0) {
         ctx.ui.notify(
           "No subagents yet. The agent spawns them with subagent_spawn.",
           "info",
         );
         return;
       }
-      await openSubagentPicker(ctx, manager.view);
+      await openSubagentPicker(ctx, view);
     },
   });
 }

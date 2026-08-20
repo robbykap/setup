@@ -31,6 +31,10 @@ export interface CommandRecord {
   readonly outputBytes: number;
   /** Set when the output was truncated and spilled to a temp file. */
   readonly fullOutputPath?: string;
+  /** Replayed from an earlier segment of this session rather than watched as
+   * it ran. The timestamps are the original ones, so a row showing it is not
+   * claiming it just happened. */
+  readonly restored?: boolean;
 }
 
 export function isFailure(record: Pick<CommandRecord, "status">) {

@@ -51,6 +51,19 @@ import {
   type EditorConfig,
 } from "./src/ide.ts";
 import type { FileOpener } from "./src/ui/opener.ts";
+import {
+  fromFileRecord,
+  pinnedShaFrom,
+  toFileRecord,
+  type FileLogRecord,
+} from "./src/persist.ts";
+import {
+  defaultStateRoot,
+  historySessionId,
+  openSessionLog,
+  pruneState,
+  type SessionLog,
+} from "../shared/session-log.ts";
 import { failedCallPath, failedChange, failureReason } from "./src/failure.ts";
 import { observeChildFiles } from "./src/observe.ts";
 import { storeKeyFor } from "./src/paths.ts";
@@ -133,8 +146,15 @@ function formatReadRange(
   return theme.fg("dim", `:${start}${end !== undefined ? `-${end}` : ""}`);
 }
 
+/** State older than this is nobody's session history any more. */
+const STATE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
 export default function (pi: ExtensionAPI) {
-  const store = createFileEditStore();
+  /** Opened at session_start, once the session id is known. */
+  let log: SessionLog<FileLogRecord> | undefined;
+  const store = createFileEditStore({
+    sink: (change) => log?.append(toFileRecord(change)),
+  });
   /** Per tool call, so a row can describe its own call: the store is
    * cumulative per file, which is what the picker and the status want. */
   const calls = createCallRecords();
@@ -213,6 +233,53 @@ export default function (pi: ExtensionAPI) {
       }
       return "opened";
     },
+  };
+
+  /**
+   * Put back what an earlier segment of this session saw, and pin the commit
+   * it started from. Resolving HEAD again here would pin whatever has been
+   * committed since, and every file already committed would read as unchanged
+   * — the exact failure this whole design set out to remove.
+   */
+  const restoreHistory = (
+    event: { reason: "startup" | "reload" | "new" | "resume" | "fork"; previousSessionFile?: string },
+    ctx: ExtensionContext,
+  ) => {
+    try {
+      const current = ctx.sessionManager.getSessionId();
+      const history = historySessionId(
+        event.reason,
+        current,
+        event.previousSessionFile,
+      );
+      // Writes always go to the current session; only the read follows a fork
+      // back to where it came from.
+      log = openSessionLog<FileLogRecord>({
+        sessionId: current,
+        surface: "files",
+      });
+      pruneState(defaultStateRoot(), STATE_RETENTION_MS);
+      if (!history) {
+        log.append({ kind: "meta", headSha });
+        return;
+      }
+      const records =
+        history === current
+          ? log.readAll()
+          : openSessionLog<FileLogRecord>({
+              sessionId: history,
+              surface: "files",
+            }).readAll();
+      const pinned = pinnedShaFrom(records);
+      if (pinned) headSha = pinned.headSha;
+      else log.append({ kind: "meta", headSha });
+      for (const record of records) {
+        const change = fromFileRecord(record);
+        if (change) store.restore(change);
+      }
+    } catch {
+      // History is a convenience. A session that cannot read it still works.
+    }
   };
 
   const OTHER_COMMAND = "Other command…";
@@ -295,10 +362,11 @@ export default function (pi: ExtensionAPI) {
       ? lastComponent
       : new ReadResultRow();
 
-  pi.on("session_start", (_event, ctx: ExtensionContext) => {
+  pi.on("session_start", (event, ctx: ExtensionContext) => {
     ui = ctx.mode === "tui" ? ctx.ui : undefined;
     sessionCwd = ctx.cwd;
     headSha = resolveHeadSha(ctx.cwd);
+    restoreHistory(event, ctx);
     stopChildFiles = observeChildFiles(pi.events, store, ctx.cwd, resolve);
 
     const baseEdit = createEditToolDefinition(ctx.cwd);

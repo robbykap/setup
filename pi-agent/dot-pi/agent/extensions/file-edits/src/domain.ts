@@ -54,6 +54,10 @@ export interface FileChange {
    * can honestly describe.
    */
   readonly hunksPending: boolean;
+  /** Replayed from an earlier segment of this session rather than watched as
+   * it happened. The timestamps are the original ones, so the row that shows
+   * it is not claiming it just occurred. */
+  readonly restored?: boolean;
 }
 
 /**

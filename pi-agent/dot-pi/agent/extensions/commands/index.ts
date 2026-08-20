@@ -43,6 +43,12 @@ import {
 } from "./src/render/row.ts";
 import { boxedDelegation, shellBg } from "../shared/tui-kit/boxed.ts";
 import { createCommandStore } from "./src/store.ts";
+import { fromCommandRecord, toCommandRecord } from "./src/persist.ts";
+import {
+  historySessionId,
+  openSessionLog,
+  type SessionLog,
+} from "../shared/session-log.ts";
 import { browseCommands } from "./src/ui/picker.ts";
 import { createViewerState } from "./src/ui/viewer.ts";
 
@@ -51,7 +57,11 @@ const STATUS_KEY = "commands";
 type Theme = ExtensionContext["ui"]["theme"];
 
 export default function (pi: ExtensionAPI) {
-  const store = createCommandStore();
+  /** Opened at session_start, once the session id is known. */
+  let log: SessionLog<CommandRecord> | undefined;
+  const store = createCommandStore({
+    sink: (record) => log?.append(toCommandRecord(record)),
+  });
   /** Per tool call, so a row describes its own call rather than the session. */
   const calls = createCallRecords();
   const viewerState = createViewerState();
@@ -111,8 +121,48 @@ export default function (pi: ExtensionAPI) {
     return row;
   };
 
-  pi.on("session_start", (_event, ctx: ExtensionContext) => {
+  /** Put back what an earlier segment of this session ran. The store's own
+   * cap decides how much of it survives, exactly as it did the first time. */
+  const restoreHistory = (
+    event: {
+      reason: "startup" | "reload" | "new" | "resume" | "fork";
+      previousSessionFile?: string;
+    },
+    ctx: ExtensionContext,
+  ) => {
+    try {
+      const current = ctx.sessionManager.getSessionId();
+      const history = historySessionId(
+        event.reason,
+        current,
+        event.previousSessionFile,
+      );
+      // Writes always go to the current session; only the read follows a fork
+      // back to where it came from.
+      log = openSessionLog<CommandRecord>({
+        sessionId: current,
+        surface: "commands",
+      });
+      if (!history) return;
+      const records =
+        history === current
+          ? log.readAll()
+          : openSessionLog<CommandRecord>({
+              sessionId: history,
+              surface: "commands",
+            }).readAll();
+      for (const value of records) {
+        const record = fromCommandRecord(value);
+        if (record) store.restore(record);
+      }
+    } catch {
+      // History is a convenience. A session that cannot read it still works.
+    }
+  };
+
+  pi.on("session_start", (event, ctx: ExtensionContext) => {
     ui = ctx.mode === "tui" ? ctx.ui : undefined;
+    restoreHistory(event, ctx);
     stopChannel = observeCommandChannel(pi.events, store);
 
     const baseBash = createBashToolDefinition(ctx.cwd);

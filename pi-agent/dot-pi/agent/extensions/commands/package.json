@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "check": "tsc --noEmit -p .",
-    "test": "node --test --experimental-strip-types src/domain.test.ts src/classify.test.ts src/store.test.ts src/record.test.ts src/observe.test.ts src/output.test.ts src/full-output.test.ts src/render/row.test.ts src/render/shell.test.ts src/ui/rows.test.ts src/ui/viewer.test.ts src/ui/picker.test.ts src/status.test.ts"
+    "test": "node --test --experimental-strip-types src/domain.test.ts src/classify.test.ts src/store.test.ts src/persist.test.ts src/record.test.ts src/observe.test.ts src/output.test.ts src/full-output.test.ts src/render/row.test.ts src/render/shell.test.ts src/ui/rows.test.ts src/ui/viewer.test.ts src/ui/picker.test.ts src/status.test.ts"
   },
   "devDependencies": {
     "typescript": "^7.0.2"

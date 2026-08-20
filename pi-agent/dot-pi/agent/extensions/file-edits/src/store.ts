@@ -47,6 +47,10 @@ export interface FileEditStore {
   record(input: RecordInput): void;
   /** A change we know happened but cannot diff yet (child sessions). */
   recordExternal(input: ExternalInput): void;
+  /** Put back a change from an earlier segment of this session. Not a
+   * record: nothing happened just now, and the counts and timestamps are the
+   * ones the previous segment left. */
+  restore(change: FileChange): void;
   /** Replace the hunks and counts with a resolved whole-session diff. */
   resolveHunks(path: string, resolved: ResolvedHunks): void;
   get(path: string): FileChange | undefined;
@@ -60,7 +64,14 @@ export interface FileEditStore {
 const DEFAULT_CAP = 200;
 
 export function createFileEditStore(
-  options: { cap?: number } = {},
+  options: {
+    cap?: number;
+    /** Called with every change the store accepts, so a session log can be
+     * written without the store knowing what a session log is. Restores do
+     * not go through it: replaying a log back into itself is how a log grows
+     * without bound. */
+    sink?: (change: FileChange) => void;
+  } = {},
 ): FileEditStore {
   const cap = options.cap ?? DEFAULT_CAP;
   const changes = new Map<string, FileChange>();
@@ -68,6 +79,11 @@ export function createFileEditStore(
 
   const notify = () => {
     for (const listener of listeners) listener();
+  };
+
+  const publish = (path: string) => {
+    const change = changes.get(path);
+    if (change) options.sink?.(change);
   };
 
   /** Oldest-first eviction keeps the map bounded without touching order of
@@ -106,6 +122,7 @@ export function createFileEditStore(
         hunksPending: true,
       });
       evict();
+      publish(input.path);
       notify();
     },
 
@@ -124,6 +141,15 @@ export function createFileEditStore(
         hunksPending: true,
       });
       evict();
+      publish(input.path);
+      notify();
+    },
+
+    restore(change) {
+      // Oldest-first replay, so a later record for the same path wins, exactly
+      // as it did the first time round.
+      changes.set(change.path, change);
+      evict();
       notify();
     },
 
@@ -137,6 +163,7 @@ export function createFileEditStore(
         removed: resolved.removed,
         hunksPending: false,
       });
+      publish(path);
       notify();
     },
 
