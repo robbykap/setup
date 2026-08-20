@@ -106,12 +106,29 @@ drop from the right when the line will not fit. Extensions publish through
 
 `file-edits` collapses every `edit`, `write` and `read` to plain icon rows in
 the transcript — no filled shell box, a look every other tool row now shares. `alt+e` (or `/files`) opens the picker; Enter opens the diff
-viewer, `s` toggles stacked and split, `n`/`p` move between files. `ctrl+o`
+viewer, `s` toggles stacked and split, `n`/`p` move between files, `o` opens
+the file in your editor. `ctrl+o`
 still expands a row inline. The shortcut is `alt+e` rather than `ctrl+f`
 because `ctrl+f` is pi's built-in forward-char binding and `ctrl+shift+f` is
 also already bound; `/files` opens the same picker if you'd rather skip the
 shortcut. `file-edits` has no `effect` dependency; install it the
 same way as the other extensions, per [Install](#install) above.
+
+The diff a file shows is the whole session's: what the file looked like before
+anything touched it, against what is on disk now. The baseline is a snapshot
+taken before the first write, or — for work a subagent did, which we only hear
+about afterwards — the blob at the commit the session started on, pinned once
+so committing mid-session cannot move it. Children also send the patch their
+own `edit` produced, which covers the cases git cannot describe at all: a child
+running outside the repository, or no repository to begin with. Syntax
+highlighting stays on inside `+`/`−` lines, with the words that actually
+changed raised onto a stronger tint.
+
+`o` needs an editor, and there is no `$EDITOR` fallback — that variable answers
+a different question, and this terminal is busy running pi. The first `o`
+offers the editors it can find on `PATH`, or a command you type; the choice
+lands in `~/.pi/agent/editor.json`, where `{path}` and `{line}` are substituted
+per launch. `/ide` changes it later.
 
 `commands` does the same for shell work. Every `bash` call collapses to two
 lines — the command, its outcome, and a peek at the LAST line it printed, since
@@ -131,6 +148,32 @@ The viewer can show more than the transcript ever did. When bash truncates
 output it spills the full run to a temp file, and the viewer reads that back on
 open (capped at the last 2 MB); `f` toggles between the full log and what the
 model actually saw.
+
+## Surfaces that outlive a reload
+
+`/files`, `/cmds` and `/subagents` are read models built as the session runs,
+and the rows behind them are collapsed to a line or two on purpose. That trade
+only holds while the read model exists — after `/reload` or `/resume` the
+stores used to start empty, with the detail gone for good.
+
+Each surface now appends to a JSON-lines sidecar at
+`~/.pi/agent/state/<session-id>/<surface>.jsonl`, replayed at `session_start`.
+`startup`, `reload` and `resume` replay the current session; a `fork` continues
+what it forked from; a new session starts empty. A truncated last line costs
+one record rather than the file, records that no longer parse are skipped, and
+state directories older than 30 days are pruned. None of it reaches the model:
+it is local state, and replay reads one small file instead of walking the
+transcript.
+
+What is written is what cannot be recomputed. `/files` keeps paths, counts,
+origins and child patches — not hunks, which the resolver rebuilds — plus the
+pinned commit, without which every file committed before the reload would read
+as unchanged. `/cmds` keeps each command with the tail of its output and the
+path to the full spill. `/subagents` keeps settled subagents with a trimmed
+transcript; a subagent still running when the session ended reads back as one
+that did not survive it. Restored subagents sit beside the live ones rather
+than inside the manager — they have no session behind them, so they can be read
+but refuse to be steered or aborted.
 
 ## Model configuration
 
