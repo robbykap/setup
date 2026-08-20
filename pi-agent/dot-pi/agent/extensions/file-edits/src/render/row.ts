@@ -8,16 +8,13 @@
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import {
-  Box,
-  type Component,
-  Container,
-  truncateToWidth,
-  visibleWidth,
-} from "@earendil-works/pi-tui";
+import { Container, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { largestHunk } from "../diff.ts";
 import type { FileChange } from "../domain.ts";
 import { iconFor, paintIcon } from "../../../shared/tui-kit/icons.ts";
+import { BoxedDelegate, boxedDelegation } from "../../../shared/tui-kit/boxed.ts";
+
+export { BoxedDelegate, boxedDelegation };
 
 type Theme = ExtensionContext["ui"]["theme"];
 
@@ -115,52 +112,6 @@ export function delegationContext<T extends { lastComponent: unknown }>(
     context.lastComponent instanceof NoteRow ||
     context.lastComponent instanceof BoxedDelegate;
   return ours ? { ...context, lastComponent: undefined } : context;
-}
-
-/**
- * The shell put back by hand, for the expanded rows that still want it.
- * `renderShell: "self"` turns off the Box ToolExecutionComponent would have
- * painted (tool-execution.js:213-219), which is what keeps a collapsed row
- * plain — but the built-in write renderers emit `Text(output, 0, 0)` and
- * count on that Box for their padding and background (write.js:170,187).
- * edit needs none of this: its own call component is already a Box
- * (edit.js:67), which is why it can set "self" and look unchanged.
- */
-export class BoxedDelegate extends Box {
-  /** What the built-in returned last time. The Box is what the slot sees, so
-   * the built-in's own component — write caches the syntax highlighting on
-   * it (write.js:175-179) — has to be remembered here to be handed back. */
-  inner: Component | undefined;
-
-  constructor(paddingY: number) {
-    super(1, paddingY, (text) => text);
-  }
-}
-
-/** Delegate to a built-in renderer and wrap what it returns in that Box. */
-export function boxedDelegation<T extends { lastComponent: unknown }>(
-  context: T,
-  paddingY: number,
-  bgFn: ((text: string) => string) | undefined,
-  render: (context: T) => Component,
-): BoxedDelegate {
-  let box: BoxedDelegate;
-  if (context.lastComponent instanceof BoxedDelegate) {
-    box = context.lastComponent;
-  } else {
-    box = new BoxedDelegate(paddingY);
-    // Not ours yet: whatever the built-in last made is still worth handing
-    // back, and delegationContext is what knows one from the other.
-    box.inner = delegationContext(context).lastComponent as
-      | Component
-      | undefined;
-  }
-  const inner = render({ ...context, lastComponent: box.inner });
-  box.inner = inner;
-  box.setBgFn(bgFn);
-  box.clear();
-  box.addChild(inner);
-  return box;
 }
 
 export function renderCollapsedRow(

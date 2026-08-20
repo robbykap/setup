@@ -49,6 +49,7 @@ import {
   boxedDelegation,
   delegationContext,
 } from "./src/render/row.ts";
+import { shellBg } from "../shared/tui-kit/boxed.ts";
 import { browseChangedFiles } from "./src/ui/picker.ts";
 import { createViewerState } from "./src/ui/viewer.ts";
 
@@ -101,17 +102,6 @@ export default function (pi: ExtensionAPI) {
   /** renderCall draws the whole row when collapsed, so the result slot has
    * nothing left to add. An empty container renders no lines. */
   const noResult = () => new EmptyRow();
-
-  /** The background pi's default shell would have painted for this state
-   * (tool-execution.js:213-219). Ours to paint now that write frames itself. */
-  const shellBg = (
-    theme: Theme,
-    context: { isPartial: boolean; isError: boolean },
-  ) => {
-    if (context.isPartial) return (text: string) => theme.bg("toolPendingBg", text);
-    if (context.isError) return (text: string) => theme.bg("toolErrorBg", text);
-    return (text: string) => theme.bg("toolSuccessBg", text);
-  };
 
   pi.on("session_start", (_event, ctx: ExtensionContext) => {
     ui = ctx.mode === "tui" ? ctx.ui : undefined;
@@ -230,8 +220,12 @@ export default function (pi: ExtensionAPI) {
         // Box that "self" took away — so it gets one of ours, with the padding
         // and background pi would have used.
         if (context.expanded) {
-          return boxedDelegation(context, 1, shellBg(theme, context), (ctx) =>
-            baseWrite.renderCall!(args, theme, ctx),
+          return boxedDelegation(
+            context,
+            1,
+            shellBg(theme, context),
+            delegationContext,
+            (ctx) => baseWrite.renderCall!(args, theme, ctx),
           );
         }
         if (change) return collapsedRow(context.lastComponent, change, theme);
@@ -265,7 +259,7 @@ export default function (pi: ExtensionAPI) {
         // outside its own Box but indented (edit.js:283) — so this one is
         // padding without a background, matching it.
         if (expanded) {
-          return boxedDelegation(context, 0, undefined, (ctx) =>
+          return boxedDelegation(context, 0, undefined, delegationContext, (ctx) =>
             baseWrite.renderResult!(result, options, theme, ctx),
           );
         }
