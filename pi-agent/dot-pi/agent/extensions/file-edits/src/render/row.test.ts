@@ -102,6 +102,27 @@ test("every line fits the width", () => {
   }
 });
 
+test("the peek separator does not knock later fragments back to full contrast", () => {
+  // The kit's peekLine wraps the whole line dim; a painted separator inside
+  // it would embed its own reset and break that run partway through.
+  const many = parseUnifiedPatch(`@@ -1,1 +1,3 @@\n+alpha\n+beta\n`)!;
+  const [, peek] = renderCollapsedRow(
+    { ...change, hunks: many.hunks },
+    80,
+    realTheme,
+  );
+  const resets = peek!.match(/\x1b\[39m/g) ?? [];
+  assert.equal(resets.length, 2, peek);
+});
+
+test("a narrow row keeps the counts even with a long path", () => {
+  // The kit truncates the title first, not the right-aligned outcome: a
+  // narrow row should still show what the call did.
+  const long = { ...change, path: "src/very/deeply/nested/router-module.ts" };
+  const [header] = renderCollapsedRow(long, 30, theme);
+  assert.match(header!, /\+12/);
+});
+
 test("a file with no hunks renders a single header line", () => {
   const lines = renderCollapsedRow({ ...change, hunks: [], hunksPending: true }, 80, theme);
   assert.equal(lines.length, 1);

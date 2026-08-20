@@ -46,10 +46,9 @@ import {
   CollapsedRow,
   EmptyRow,
   NoteRow,
-  boxedDelegation,
   delegationContext,
 } from "./src/render/row.ts";
-import { shellBg } from "../shared/tui-kit/boxed.ts";
+import { boxedDelegation, shellBg } from "../shared/tui-kit/boxed.ts";
 import { browseChangedFiles } from "./src/ui/picker.ts";
 import { createViewerState } from "./src/ui/viewer.ts";
 

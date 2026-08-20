@@ -37,6 +37,10 @@ export function shellBg(
  * Delegate to a built-in renderer and wrap what it returns in that Box.
  * `unwrap` is the extension's delegationContext: it hides the extension's
  * own components from the built-in while handing its own back.
+ *
+ * `paddingY` only takes effect the first time this slot builds the box —
+ * pi-tui's Box has no setter for it, so it is ignored on the reuse path.
+ * Callers must keep it constant per slot.
  */
 export function boxedDelegation<T extends { lastComponent: unknown }>(
   context: T,

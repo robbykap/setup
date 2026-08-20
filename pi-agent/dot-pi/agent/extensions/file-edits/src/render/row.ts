@@ -12,10 +12,8 @@ import { Container } from "@earendil-works/pi-tui";
 import { largestHunk } from "../diff.ts";
 import type { FileChange } from "../domain.ts";
 import { iconFor } from "../../../shared/tui-kit/icons.ts";
-import { BoxedDelegate, boxedDelegation } from "../../../shared/tui-kit/boxed.ts";
+import { BoxedDelegate } from "../../../shared/tui-kit/boxed.ts";
 import { peekLine, renderToolRow } from "../../../shared/tui-kit/row.ts";
-
-export { BoxedDelegate, boxedDelegation };
 
 type Theme = ExtensionContext["ui"]["theme"];
 
@@ -139,7 +137,7 @@ export function renderCollapsedRow(
           changed
             .slice(0, PEEK_LINES)
             .map((line) => line.text.trim())
-            .join(theme.fg("dim", " · ")),
+            .join(" · "),
         ];
   return renderToolRow({ ...parts, peek }, width, theme);
 }
