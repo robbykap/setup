@@ -28,12 +28,19 @@ import { createBashToolDefinition } from "@earendil-works/pi-coding-agent";
 import { formatCommandsStatus } from "./src/status.ts";
 import type { CommandRecord } from "./src/domain.ts";
 import { observeCommandChannel } from "./src/observe.ts";
-import { createCallRecords, executeBashAndRecord } from "./src/record.ts";
+import {
+  createCallRecords,
+  executeBashAndRecord,
+  resultText,
+} from "./src/record.ts";
 import {
   CollapsedRow,
   EmptyRow,
+  LiveCallRow,
+  LivePeekRow,
   delegationContext,
 } from "./src/render/row.ts";
+import { boxedDelegation, shellBg } from "../shared/tui-kit/boxed.ts";
 import { createCommandStore } from "./src/store.ts";
 import { browseCommands } from "./src/ui/picker.ts";
 import { createViewerState } from "./src/ui/viewer.ts";
@@ -76,6 +83,20 @@ export default function (pi: ExtensionAPI) {
    * nothing left to say. An empty container renders no lines. */
   const noCall = () => new EmptyRow();
 
+  const liveCall = (lastComponent: unknown, command: string, theme: Theme) => {
+    const row =
+      lastComponent instanceof LiveCallRow ? lastComponent : new LiveCallRow();
+    row.update(command, theme);
+    return row;
+  };
+
+  const livePeek = (lastComponent: unknown, output: string, theme: Theme) => {
+    const row =
+      lastComponent instanceof LivePeekRow ? lastComponent : new LivePeekRow();
+    row.update(output, theme);
+    return row;
+  };
+
   pi.on("session_start", (_event, ctx: ExtensionContext) => {
     ui = ctx.mode === "tui" ? ctx.ui : undefined;
     stopChannel = observeCommandChannel(pi.events, store);
@@ -84,6 +105,11 @@ export default function (pi: ExtensionAPI) {
 
     const bashTool: typeof baseBash = {
       ...baseBash,
+      // The built-in bash renderer sets no shell, so pi paints a colored Box
+      // around it (tool-execution.js:50). "self" hands the framing to us, so
+      // the collapsed and live rows stay plain; expanded gets the box back
+      // through boxedDelegation below.
+      renderShell: "self",
       async execute(toolCallId, params, signal, onUpdate, executeCtx) {
         return executeBashAndRecord({
           toolCallId,
@@ -97,36 +123,50 @@ export default function (pi: ExtensionAPI) {
         });
       },
       renderCall(args, theme, context) {
-        // While the command is still running there is no record yet, so the
-        // built-in's live "$ command · 3s" line stays: a collapsed row would
-        // be a row about nothing. Once recorded, the result slot draws both
-        // lines and this one steps aside.
-        const record = calls.get(context.toolCallId);
-        if (!record || context.expanded) {
-          return baseBash.renderCall!(args, theme, delegationContext(context));
-        }
-        return noCall();
-      },
-      renderResult(result, options, theme, context) {
-        // Failures collapse like everything else — the row's deeper tail peek
-        // carries the signal, and ctrl+o expands to the built-in's full
-        // output. An expanded row is that ctrl+o. A partial result is a
-        // command still streaming, which the built-in renders live.
-        const record = calls.get(context.toolCallId);
-        const expanded = options.expanded || context.expanded;
-        if (expanded || options.isPartial || !record) {
-          return baseBash.renderResult!(
-            result,
-            options,
-            theme,
-            delegationContext(context),
+        // Expanded is the built-in's view, and the built-in expects the shell
+        // Box that "self" took away — so it gets one of ours.
+        if (context.expanded) {
+          return boxedDelegation(
+            context,
+            1,
+            shellBg(theme, context),
+            delegationContext,
+            (ctx) => baseBash.renderCall!(args, theme, ctx),
           );
         }
-        // Not a rendering call: while the command streamed, the built-in
-        // started a 1Hz interval to tick its elapsed time (bash.js:369-380),
-        // and the final call is where it clears it. Skipping that would leave
-        // a timer invalidating a component nobody draws. Run it for the
-        // cleanup, then throw the component it returns away.
+        const record = calls.get(context.toolCallId);
+        // Settled: the result slot draws the whole row.
+        if (record) return noCall();
+        // Still running: our own live header instead of the boxed built-in line.
+        return liveCall(
+          context.lastComponent,
+          typeof args.command === "string" ? args.command : "",
+          theme,
+        );
+      },
+      renderResult(result, options, theme, context) {
+        const expanded = options.expanded || context.expanded;
+        if (expanded) {
+          return boxedDelegation(
+            context,
+            0,
+            shellBg(theme, {
+              isPartial: options.isPartial,
+              isError: context.isError,
+            }),
+            delegationContext,
+            (ctx) => baseBash.renderResult!(result, options, theme, ctx),
+          );
+        }
+        const record = calls.get(context.toolCallId);
+        // Streaming: a dim peek at the tail of what has arrived so far.
+        if (options.isPartial || !record) {
+          return livePeek(context.lastComponent, resultText(result), theme);
+        }
+        // Not a rendering call: while the command streamed AND was expanded, the
+        // built-in may have started its 1Hz elapsed-time interval
+        // (bash.js:369-380), and the final call is where it clears it. Run it
+        // for the cleanup, then throw the component it returns away.
         baseBash.renderResult!(
           result,
           options,

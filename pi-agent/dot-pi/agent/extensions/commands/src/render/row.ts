@@ -10,11 +10,7 @@
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import {
-  Container,
-  truncateToWidth,
-  visibleWidth,
-} from "@earendil-works/pi-tui";
+import { Container } from "@earendil-works/pi-tui";
 import type { CommandRecord } from "../domain.ts";
 import {
   formatDuration,
@@ -26,6 +22,9 @@ import {
   summarizeCommand,
 } from "../domain.ts";
 import { oneLine, sanitizeText } from "../output.ts";
+import { UI_ICONS } from "../../../shared/tui-kit/icons.ts";
+import { peekLine, renderToolRow } from "../../../shared/tui-kit/row.ts";
+import { BoxedDelegate } from "../../../shared/tui-kit/boxed.ts";
 
 /** How many trailing lines a row peeks at: one for a success, and two more
  * for a failure, where the line before the error usually names the cause. */
@@ -61,6 +60,51 @@ export class CollapsedRow extends Container {
  * the whole row, so there is nothing left to add. */
 export class EmptyRow extends Container {}
 
+/** The call slot while the command is still running: icon, command, and a
+ * running marker — the boxed built-in live line replaced. */
+export class LiveCallRow extends Container {
+  private command = "";
+  private theme: Theme | undefined;
+
+  update(command: string, theme: Theme): void {
+    this.command = command;
+    this.theme = theme;
+  }
+
+  override render(width: number): string[] {
+    if (!this.theme) return [];
+    return renderToolRow(
+      {
+        icon: UI_ICONS.terminal,
+        title: paintCommand(this.command, this.theme),
+        right: this.theme.fg("warning", "… running"),
+      },
+      width,
+      this.theme,
+    );
+  }
+}
+
+/** The result slot while output is still streaming: a dim peek at the last
+ * line so far. Re-rendered every time a new chunk arrives. */
+export class LivePeekRow extends Container {
+  private output = "";
+  private theme: Theme | undefined;
+
+  update(output: string, theme: Theme): void {
+    this.output = output;
+    this.theme = theme;
+  }
+
+  override render(width: number): string[] {
+    if (!this.theme) return [];
+    const theme = this.theme;
+    return tailLines(this.output, PEEK_LINES).map((line) =>
+      peekLine(line, width, theme),
+    );
+  }
+}
+
 /**
  * The context to hand the built-in renderer when delegating. A slot's
  * `lastComponent` is whatever that slot returned last time, so after a
@@ -72,7 +116,10 @@ export function delegationContext<T extends { lastComponent: unknown }>(
 ): T {
   const ours =
     context.lastComponent instanceof CollapsedRow ||
-    context.lastComponent instanceof EmptyRow;
+    context.lastComponent instanceof EmptyRow ||
+    context.lastComponent instanceof LiveCallRow ||
+    context.lastComponent instanceof LivePeekRow ||
+    context.lastComponent instanceof BoxedDelegate;
   return ours ? { ...context, lastComponent: undefined } : context;
 }
 
@@ -88,41 +135,33 @@ function outcome(record: CommandRecord, theme: Theme) {
   return parts.join(theme.fg("dim", " · "));
 }
 
+/** The command painted the way every bash row titles itself. */
+function paintCommand(command: string, theme: Theme): string {
+  const summary = summarizeCommand(command);
+  return (
+    theme.bold(theme.fg("text", oneLine(summary.text))) +
+    (summary.more > 0 ? theme.fg("dim", ` +${summary.more} more`) : "")
+  );
+}
+
 export function renderCollapsedRow(
   record: CommandRecord,
   width: number,
   theme: Theme,
 ): string[] {
-  const summary = summarizeCommand(record.command);
-  const command = oneLine(summary.text);
-  const left =
-    theme.fg("dim", " $ ") +
-    theme.bold(theme.fg("text", command)) +
-    (summary.more > 0 ? theme.fg("dim", ` +${summary.more} more`) : "");
-  const right = outcome(record, theme);
-
-  const gap = Math.max(1, width - visibleWidth(left) - visibleWidth(right));
-  const header = truncateToWidth(
-    `${left}${" ".repeat(gap)}${right}`,
-    width,
-    theme.fg("dim", "…"),
-  );
-
-  const peek = tailLines(
-    record.output,
-    isFailure(record) ? FAILURE_PEEK_LINES : PEEK_LINES,
-  );
-
-  return [
-    header,
-    ...peek.map((line) =>
-      truncateToWidth(
-        `   ${theme.fg("dim", "│")} ${theme.fg("dim", line)}`,
-        width,
-        theme.fg("dim", "…"),
+  return renderToolRow(
+    {
+      icon: UI_ICONS.terminal,
+      title: paintCommand(record.command, theme),
+      right: outcome(record, theme),
+      peek: tailLines(
+        record.output,
+        isFailure(record) ? FAILURE_PEEK_LINES : PEEK_LINES,
       ),
-    ),
-  ];
+    },
+    width,
+    theme,
+  );
 }
 
 /** The last `count` lines with anything on them, oldest first. Blank lines are

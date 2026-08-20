@@ -3,9 +3,12 @@ import { test } from "node:test";
 import { Theme } from "@earendil-works/pi-coding-agent";
 import { Container, visibleWidth } from "@earendil-works/pi-tui";
 import type { CommandRecord } from "../domain.ts";
+import { UI_ICONS } from "../../../shared/tui-kit/icons.ts";
 import {
   CollapsedRow,
   EmptyRow,
+  LiveCallRow,
+  LivePeekRow,
   delegationContext,
   renderCollapsedRow,
 } from "./row.ts";
@@ -67,11 +70,31 @@ test("renders exactly two lines", () => {
   assert.equal(renderCollapsedRow(record(), 80, theme).length, 2);
 });
 
-test("the header carries the command and the outcome", () => {
+test("the header carries the icon, command and the outcome", () => {
   const [header] = renderCollapsedRow(record(), 80, theme);
+  assert.ok(header!.includes(UI_ICONS.terminal.glyph));
   assert.match(header!, /git status --short/);
   assert.match(header!, /420ms/);
   assert.match(header!, /2 lines/);
+});
+
+test("running call row shows icon, command, and running marker", () => {
+  const row = new LiveCallRow();
+  row.update("npm test", theme);
+  const lines = row.render(60);
+  assert.equal(lines.length, 1);
+  assert.ok(lines[0]!.includes(UI_ICONS.terminal.glyph));
+  assert.ok(lines[0]!.includes("npm test"));
+  assert.ok(lines[0]!.includes("running"));
+});
+
+test("live peek row shows the last output line, dim, no box", () => {
+  const row = new LivePeekRow();
+  row.update("compiling…\nlinking…\n", theme);
+  const lines = row.render(60);
+  assert.equal(lines.length, 1);
+  assert.ok(lines[0]!.includes("linking…"));
+  assert.ok(!lines[0]!.includes("\x1b[48"));
 });
 
 test("the peek is the last output line, not the first", () => {
