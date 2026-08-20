@@ -8,11 +8,12 @@
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Container, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Container } from "@earendil-works/pi-tui";
 import { largestHunk } from "../diff.ts";
 import type { FileChange } from "../domain.ts";
-import { iconFor, paintIcon } from "../../../shared/tui-kit/icons.ts";
+import { iconFor } from "../../../shared/tui-kit/icons.ts";
 import { BoxedDelegate, boxedDelegation } from "../../../shared/tui-kit/boxed.ts";
+import { peekLine, renderToolRow } from "../../../shared/tui-kit/row.ts";
 
 export { BoxedDelegate, boxedDelegation };
 
@@ -120,31 +121,27 @@ export function renderCollapsedRow(
   theme: Theme,
   failed = false,
 ): string[] {
-  const left = `${paintIcon(iconFor(change.path))} ${paintPath(change.path, theme)}`;
-  const right = failed ? theme.fg("error", FAILED_MARKER) : counts(change, theme);
-  const gap = Math.max(1, width - visibleWidth(left) - visibleWidth(right));
-  const header = truncateToWidth(
-    `${left}${" ".repeat(gap)}${right}`,
-    width,
-    theme.fg("dim", "…"),
-  );
-
+  const parts = {
+    icon: iconFor(change.path),
+    title: paintPath(change.path, theme),
+    right: failed ? theme.fg("error", FAILED_MARKER) : counts(change, theme),
+  };
   // Nothing was applied, so there is no diff to peek at: the reason comes
   // from the result slot (NoteRow) instead.
-  if (failed) return [header];
+  if (failed) return renderToolRow(parts, width, theme);
 
   const hunk = largestHunk(change.hunks);
-  if (!hunk) return [header];
-
-  const changed = hunk.lines.filter((line) => line.kind !== "context");
-  if (changed.length === 0) return [header];
-
-  const peek = changed
-    .slice(0, PEEK_LINES)
-    .map((line) => line.text.trim())
-    .join(theme.fg("dim", " · "));
-
-  return [header, peekLine(peek, width, theme)];
+  const changed = hunk?.lines.filter((line) => line.kind !== "context") ?? [];
+  const peek =
+    changed.length === 0
+      ? []
+      : [
+          changed
+            .slice(0, PEEK_LINES)
+            .map((line) => line.text.trim())
+            .join(theme.fg("dim", " · ")),
+        ];
+  return renderToolRow({ ...parts, peek }, width, theme);
 }
 
 /** The reason line under a failed header. Empty text renders no line at all:
@@ -152,12 +149,4 @@ export function renderCollapsedRow(
 export function renderNote(text: string, width: number, theme: Theme): string[] {
   const line = text.replace(/\s+/g, " ").trim();
   return line ? [peekLine(line, width, theme)] : [];
-}
-
-function peekLine(text: string, width: number, theme: Theme): string {
-  return truncateToWidth(
-    `   ${theme.fg("dim", "│")} ${theme.fg("dim", text)}`,
-    width,
-    theme.fg("dim", "…"),
-  );
 }
