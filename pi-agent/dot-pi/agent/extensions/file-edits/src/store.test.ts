@@ -91,10 +91,12 @@ test("a local edit on top of a child's edit stays pending: its hunks are half th
   assert.equal(change.hunks.length, 1);
 });
 
-test("a file no child touched settles as soon as it is recorded", () => {
+test("every record starts pending: one call is never the file's whole diff", () => {
+  // What a call reports is what that call did. The counts beside it are the
+  // session's running total, and only the resolver can make the two agree.
   const store = createFileEditStore();
   store.record({ path: "a.ts", hunks: [hunk(2)], added: 2, removed: 0, isNew: false, origin: SELF, at: 1 });
-  assert.equal(store.get("a.ts")?.hunksPending, false);
+  assert.equal(store.get("a.ts")?.hunksPending, true);
 });
 
 test("a child's file goes pending again after every later local edit", () => {
@@ -142,18 +144,26 @@ test("the store is capped, dropping the oldest entries", () => {
   assert.equal(store.get("a.ts"), undefined);
 });
 
-test("eviction drops the child marker with the record", () => {
-  // The marker is sticky for as long as the record lives. Once the file falls
-  // out of the store, a later local edit is all we know about it, and all we
-  // need: leaving the marker behind would send the viewer to git forever.
+test("eviction drops a file's patches with its record", () => {
+  // The patches are a fallback diff for one file. Once the file falls out of
+  // the store, keeping them would attach one session's hunks to the next
+  // record that happens to share the path.
   const store = createFileEditStore({ cap: 2 });
-  store.recordExternal({ path: "a.ts", origin: { kind: "subagent", id: "sa-2", name: "sa-2" }, at: 1 });
+  store.recordExternal({ path: "a.ts", origin: { kind: "subagent", id: "sa-2", name: "sa-2" }, at: 1, patch: "@@ -1 +1 @@\n-a\n+b\n" });
   store.record({ path: "b.ts", hunks: [], added: 1, removed: 0, isNew: false, origin: SELF, at: 2 });
   store.record({ path: "c.ts", hunks: [], added: 1, removed: 0, isNew: false, origin: SELF, at: 3 });
   assert.equal(store.get("a.ts"), undefined);
 
   store.record({ path: "a.ts", hunks: [hunk(1)], added: 1, removed: 0, isNew: false, origin: SELF, at: 4 });
-  assert.equal(store.get("a.ts")?.hunksPending, false);
+  assert.deepEqual(store.get("a.ts")?.patches, []);
+});
+
+test("patches accumulate in arrival order, across local and child calls", () => {
+  const store = createFileEditStore();
+  store.recordExternal({ path: "a.ts", origin: { kind: "subagent", id: "sa-2", name: "sa-2" }, at: 1, patch: "first" });
+  store.record({ path: "a.ts", hunks: [], added: 1, removed: 0, isNew: false, origin: SELF, at: 2, patch: "second" });
+  store.recordExternal({ path: "a.ts", origin: { kind: "workflow", label: "run" }, at: 3 });
+  assert.deepEqual(store.get("a.ts")?.patches, ["first", "second"]);
 });
 
 test("totals sum across files", () => {

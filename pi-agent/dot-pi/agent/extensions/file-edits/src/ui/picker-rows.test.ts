@@ -24,6 +24,7 @@ const change = {
   isNew: false,
   updatedAt: 1_000_000,
   origin: { kind: "self" } as const,
+  patches: [],
   hunksPending: false,
 };
 

@@ -28,6 +28,8 @@ export interface CallDelta {
   readonly added: number;
   readonly removed: number;
   readonly isNew: boolean;
+  /** The tool's own patch, kept for files no baseline could be taken of. */
+  readonly patch?: string;
 }
 
 /**
@@ -58,6 +60,7 @@ export function measureEdit(cwd: string): Measure<EditParams, EditResult> {
       added: parsed?.added ?? 0,
       removed: parsed?.removed ?? 0,
       isNew: false,
+      ...(patch ? { patch } : {}),
     };
   };
 }
@@ -119,6 +122,9 @@ export interface RecordedExecution<TParams, TResult> {
   readonly calls: CallRecords;
   /** Epoch ms. Injected so tests do not depend on the clock. */
   readonly at: number;
+  /** Resolve the file's whole-session diff, now that the call has landed.
+   * Optional so the arithmetic here stays testable without a filesystem. */
+  readonly onRecorded?: (key: string) => void;
 }
 
 export async function executeAndRecord<TParams, TResult>(
@@ -131,13 +137,17 @@ export async function executeAndRecord<TParams, TResult>(
   execution.calls.set(execution.toolCallId, {
     path: delta.path,
     hunks: delta.hunks,
+    patches: delta.patch ? [delta.patch] : [],
     added: delta.added,
     removed: delta.removed,
     edits: 1,
     isNew: delta.isNew,
     updatedAt: execution.at,
     origin: SELF,
+    // The per-call record is the one thing that IS settled: it describes this
+    // call and nothing else, which is exactly what its transcript row says.
     hunksPending: false,
   });
+  execution.onRecorded?.(delta.path);
   return result;
 }

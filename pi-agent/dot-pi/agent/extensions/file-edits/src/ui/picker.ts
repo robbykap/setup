@@ -274,6 +274,7 @@ export async function browseChangedFiles(
   store: FileEditStore,
   cwd: string,
   viewerState: ViewerState = createViewerState(),
+  resolve?: (path: string) => string | undefined,
 ) {
   const pickerState = createPickerState();
   while (true) {
@@ -286,7 +287,15 @@ export async function browseChangedFiles(
       const paths = filterChanges(store.list(), pickerState.query).map(
         (change) => change.path,
       );
-      const exit = await openDiffViewer(ctx, store, current, viewerState, cwd, paths);
+      const exit = await openDiffViewer(
+        ctx,
+        store,
+        current,
+        viewerState,
+        cwd,
+        paths,
+        resolve,
+      );
       current = exit ? exit.next : null;
       if (current) pickerState.path = current;
     }

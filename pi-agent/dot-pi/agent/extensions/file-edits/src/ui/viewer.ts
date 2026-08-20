@@ -15,7 +15,6 @@ import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { pairRows, type SplitRow } from "../diff.ts";
 import type { DiffLine, FileChange, Hunk } from "../domain.ts";
-import { diffAgainstHead } from "../git-diff.ts";
 import { iconFor, paintIcon } from "../../../shared/tui-kit/icons.ts";
 import {
   highlightBlock,
@@ -65,26 +64,30 @@ export interface ViewerState {
 export type ViewerExit = { readonly next: string } | null;
 
 /**
- * Whether the viewer has to ask git what changed.
+ * Whether the viewer has to work out what changed.
  *
- * Two records arrive without hunks, not one: a child session's change, which
- * announces itself as pending, and anything `write` produced — write reports
- * no patch (record.ts measureWrite), so its record lands with zero hunks and
- * `hunksPending` already false. Keying off the flag alone left every written
- * file showing an empty panel.
+ * Always, for a file the store still holds. Resolution is a file read and a
+ * diff, which costs nothing next to opening a panel, and anything cheaper
+ * goes stale: a record resolved three edits ago describes the file as it was
+ * three edits ago.
  */
 export function needsHunkResolution(change: FileChange | undefined): boolean {
-  if (!change) return false;
-  return change.hunksPending || change.hunks.length === 0;
+  return change !== undefined;
 }
 
 /** Why the body is empty, or null when it is not. A blank panel is a bug
- * report waiting to happen; say what happened instead. */
-export function emptyBodyMessage(change: FileChange | undefined): string | null {
+ * report waiting to happen; say what happened instead. `note` is the
+ * resolver's own account of why it found nothing, which is more specific than
+ * anything this function could guess. */
+export function emptyBodyMessage(
+  change: FileChange | undefined,
+  note?: string,
+): string | null {
   if (!change) return "file is no longer tracked";
   if (change.hunks.length > 0) return null;
+  if (note) return note;
   if (change.hunksPending) return "no diff available for this file yet";
-  return "no diff against HEAD — the file matches the last commit";
+  return "no diff against the commit this session started on";
 }
 
 function lineColor(kind: DiffLine["kind"]) {
@@ -195,6 +198,7 @@ export class DiffViewer implements Component {
   private path: string;
   private state: ViewerState;
   private paths: ReadonlyArray<string>;
+  private note: string | undefined;
   private done: (value: ViewerExit) => void;
 
   private offset = 0;
@@ -217,6 +221,7 @@ export class DiffViewer implements Component {
     path: string,
     state: ViewerState,
     paths: ReadonlyArray<string>,
+    note: string | undefined,
     done: (value: ViewerExit) => void,
   ) {
     this.tui = tui;
@@ -226,6 +231,7 @@ export class DiffViewer implements Component {
     this.path = path;
     this.state = state;
     this.paths = paths;
+    this.note = note;
     this.done = done;
     this.unsubscribe = store.subscribe(() => this.tui.requestRender());
   }
@@ -435,7 +441,7 @@ export class DiffViewer implements Component {
       topBorder(theme, width, position),
     ];
 
-    const placeholder = emptyBodyMessage(change);
+    const placeholder = emptyBodyMessage(change, this.note);
     const body = placeholder
       ? [theme.fg("dim", placeholder)]
       : mode === "split"
@@ -493,21 +499,24 @@ export async function openDiffViewer(
   state: ViewerState,
   cwd: string,
   paths: ReadonlyArray<string> = store.list().map((change) => change.path),
+  resolve?: (path: string) => string | undefined,
 ): Promise<ViewerExit> {
-  const change = store.get(path);
-  if (needsHunkResolution(change)) {
-    const resolved = diffAgainstHead(cwd, path);
-    if (resolved) {
-      store.resolveHunks(path, {
-        hunks: resolved.hunks,
-        added: resolved.added,
-        removed: resolved.removed,
-      });
-    }
-  }
+  // Resolution happens once, on open, and its account of an empty result is
+  // carried into the panel: the store holds hunks, not reasons.
+  const note = resolve?.(path);
   return ctx.ui.custom<ViewerExit>(
     (tui, theme, keybindings, done) =>
-      new DiffViewer(tui, theme, keybindings, store, path, state, paths, done),
+      new DiffViewer(
+        tui,
+        theme,
+        keybindings,
+        store,
+        path,
+        state,
+        paths,
+        note,
+        done,
+      ),
     {
       overlay: true,
       overlayOptions: { anchor: "center", width: "100%", maxHeight: "100%" },

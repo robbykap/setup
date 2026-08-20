@@ -281,6 +281,7 @@ for (const width of [100, 90, 72, 60]) {
         "src/file0.ts",
         { mode },
         ["src/file0.ts", "src/file1.ts"],
+        undefined,
         () => {},
       );
       const lines = viewer.render(width);
@@ -305,6 +306,7 @@ test("a file with no diff yet still fills the rectangle", () => {
     "docs/x.md",
     { mode: "stacked" },
     ["docs/x.md"],
+    undefined,
     () => {},
   );
   const lines = viewer.render(100);
@@ -322,6 +324,7 @@ test("scrolling to the bottom keeps the rectangle intact", () => {
     "src/file0.ts",
     { mode: "stacked" },
     ["src/file0.ts"],
+    undefined,
     () => {},
   );
   for (let index = 0; index < 100; index += 1) viewer.handleInput("j");

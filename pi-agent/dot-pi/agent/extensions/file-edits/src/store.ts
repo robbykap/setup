@@ -13,6 +13,9 @@ export interface RecordInput {
   readonly removed: number;
   readonly isNew: boolean;
   readonly origin: ChangeOrigin;
+  /** The tool's own patch for this call, kept as a fallback for files no
+   * baseline could be established for. */
+  readonly patch?: string;
   /** Epoch ms. Injected so tests do not depend on the clock. */
   readonly at: number;
 }
@@ -20,6 +23,7 @@ export interface RecordInput {
 export interface ExternalInput {
   readonly path: string;
   readonly origin: ChangeOrigin;
+  readonly patch?: string;
   readonly at: number;
 }
 
@@ -29,11 +33,21 @@ export interface ResolvedHunks {
   readonly removed: number;
 }
 
+/** Patches accumulate rather than replace: each one describes a different
+ * call, and the fallback that reads them wants the whole run. */
+function appendPatch(
+  previous: ReadonlyArray<string> | undefined,
+  patch: string | undefined,
+): ReadonlyArray<string> {
+  if (!patch) return previous ?? [];
+  return [...(previous ?? []), patch];
+}
+
 export interface FileEditStore {
   record(input: RecordInput): void;
   /** A change we know happened but cannot diff yet (child sessions). */
   recordExternal(input: ExternalInput): void;
-  /** Fill in hunks computed later, e.g. against git HEAD. */
+  /** Replace the hunks and counts with a resolved whole-session diff. */
   resolveHunks(path: string, resolved: ResolvedHunks): void;
   get(path: string): FileChange | undefined;
   /** Most recently changed first. */
@@ -50,14 +64,6 @@ export function createFileEditStore(
 ): FileEditStore {
   const cap = options.cap ?? DEFAULT_CAP;
   const changes = new Map<string, FileChange>();
-  /**
-   * Paths a child session has touched. A child's diff is never captured, so
-   * once one has edited a file, the hunks any later local call reports cover
-   * only that call — the file as a whole can still only be described by git.
-   * Sticky, because resolving once does not make the next local edit complete
-   * either.
-   */
-  const touchedByChild = new Set<string>();
   const listeners = new Set<() => void>();
 
   const notify = () => {
@@ -78,7 +84,6 @@ export function createFileEditStore(
       }
       if (!oldestPath) return;
       changes.delete(oldestPath);
-      touchedByChild.delete(oldestPath);
     }
   };
 
@@ -88,14 +93,17 @@ export function createFileEditStore(
       changes.set(input.path, {
         path: input.path,
         hunks: input.hunks,
+        patches: appendPatch(previous?.patches, input.patch),
         added: (previous?.added ?? 0) + input.added,
         removed: (previous?.removed ?? 0) + input.removed,
         edits: (previous?.edits ?? 0) + 1,
         isNew: previous?.isNew || input.isNew,
         updatedAt: input.at,
         origin: input.origin,
-        // Our own hunks settle the file only when they are all of it.
-        hunksPending: touchedByChild.has(input.path),
+        // What one call reported is never the file's whole story; the
+        // resolver settles that, and until it has run these counts are the
+        // running total rather than the diff.
+        hunksPending: true,
       });
       evict();
       notify();
@@ -103,10 +111,10 @@ export function createFileEditStore(
 
     recordExternal(input) {
       const previous = changes.get(input.path);
-      touchedByChild.add(input.path);
       changes.set(input.path, {
         path: input.path,
         hunks: previous?.hunks ?? [],
+        patches: appendPatch(previous?.patches, input.patch),
         added: previous?.added ?? 0,
         removed: previous?.removed ?? 0,
         edits: (previous?.edits ?? 0) + 1,

@@ -58,6 +58,7 @@ export function failedChange(path: string): FileChange {
     isNew: false,
     updatedAt: 0,
     origin: SELF,
+    patches: [],
     hunksPending: false,
   };
 }

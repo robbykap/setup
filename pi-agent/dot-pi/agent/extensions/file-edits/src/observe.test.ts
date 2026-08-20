@@ -87,3 +87,31 @@ test("..config.ts inside the cwd keys relative, not absolute", () => {
   });
   assert.ok(store.get("..config.ts"), `expected ..config.ts, got ${store.list().map((c) => c.path).join(",")}`);
 });
+
+test("a child's patch is kept as the fallback diff for that file", () => {
+  const store = createFileEditStore();
+  const events = bus();
+  observeChildFiles(events as never, store, "/repo");
+  events.emit("dashboard:child-file", {
+    path: "src/a.ts",
+    patch: "@@ -1,1 +1,1 @@\n-old\n+new\n",
+    origin: { kind: "subagent", id: "sa-2", name: "sa-2" },
+  });
+  assert.deepEqual(store.get("src/a.ts")?.patches, [
+    "@@ -1,1 +1,1 @@\n-old\n+new\n",
+  ]);
+});
+
+test("a child edit asks for resolution as soon as it lands", () => {
+  // The picker shows counts before anyone opens a file, so waiting until the
+  // viewer opens would leave a subagent's work reading +0 −0 in the list.
+  const store = createFileEditStore();
+  const events = bus();
+  const resolved: string[] = [];
+  observeChildFiles(events as never, store, "/repo", (key) => resolved.push(key));
+  events.emit("dashboard:child-file", {
+    path: "/repo/src/a.ts",
+    origin: { kind: "workflow", label: "run" },
+  });
+  assert.deepEqual(resolved, ["src/a.ts"]);
+});

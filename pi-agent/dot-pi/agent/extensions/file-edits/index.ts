@@ -22,6 +22,7 @@
  */
 
 import * as fs from "node:fs";
+import * as path from "node:path";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -34,7 +35,10 @@ import {
   type ReadToolDetails,
 } from "@earendil-works/pi-coding-agent";
 import { formatFilesStatus } from "./src/status.ts";
+import { createBaselineStore, nodeBaselineIo } from "./src/baseline.ts";
 import type { FileChange } from "./src/domain.ts";
+import { blobAtRef, diffAgainstRef, resolveHeadSha } from "./src/git-diff.ts";
+import { resolveChange, resolutionNote } from "./src/resolve.ts";
 import { failedCallPath, failedChange, failureReason } from "./src/failure.ts";
 import { observeChildFiles } from "./src/observe.ts";
 import { storeKeyFor } from "./src/paths.ts";
@@ -63,6 +67,12 @@ import { createViewerState } from "./src/ui/viewer.ts";
 const STATUS_KEY = "file-edits";
 
 type Theme = ExtensionContext["ui"]["theme"];
+
+/** Where a tool's `path` argument actually points. The store key is
+ * cwd-relative; a snapshot has to be read from the filesystem. */
+function absolutePathOf(cwd: string, target: string): string {
+  return path.isAbsolute(target) ? target : path.join(cwd, target);
+}
 
 /** Line count the way read itself counts (pi's truncateHead convention):
  * a trailing newline is not an extra empty line. */
@@ -117,8 +127,51 @@ export default function (pi: ExtensionAPI) {
    * cumulative per file, which is what the picker and the status want. */
   const calls = createCallRecords();
   const viewerState = createViewerState();
+  /** What each file looked like before this session touched it. Captured
+   * before a tool writes, because afterwards nobody can reconstruct it. */
+  const baselines = createBaselineStore(nodeBaselineIo());
   let ui: ExtensionUIContext | undefined;
   let stopChildFiles: (() => void) | undefined;
+  /** The commit this session started on, pinned once. A commit made mid-session
+   * moves HEAD past the work someone opened /files to look at. */
+  let headSha: string | null = null;
+  let sessionCwd = process.cwd();
+
+  /**
+   * Recompute a file's whole-session diff and write it back to the store, so
+   * the hunks and the counts beside them describe the same thing. Returns the
+   * note to show when it comes to nothing.
+   */
+  const resolve = (key: string): string | undefined => {
+    const change = store.get(key);
+    if (!change) return undefined;
+    const resolution = resolveChange(change, {
+      cwd: sessionCwd,
+      baselines,
+      headSha,
+      readFile: (absolutePath) => {
+        try {
+          return fs.readFileSync(absolutePath, "utf8");
+        } catch {
+          return null;
+        }
+      },
+      blobAtRef,
+      diffAgainstRef,
+    });
+    if (resolution.kind === "resolved") {
+      store.resolveHunks(key, {
+        hunks: resolution.hunks,
+        added: resolution.added,
+        removed: resolution.removed,
+      });
+    } else {
+      // Nothing to show is still an answer, and the record should stop
+      // claiming counts no diff supports.
+      store.resolveHunks(key, { hunks: [], added: 0, removed: 0 });
+    }
+    return resolutionNote(resolution);
+  };
 
   const updateStatus = () => {
     if (!ui) return;
@@ -167,7 +220,9 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", (_event, ctx: ExtensionContext) => {
     ui = ctx.mode === "tui" ? ctx.ui : undefined;
-    stopChildFiles = observeChildFiles(pi.events, store, ctx.cwd);
+    sessionCwd = ctx.cwd;
+    headSha = resolveHeadSha(ctx.cwd);
+    stopChildFiles = observeChildFiles(pi.events, store, ctx.cwd, resolve);
 
     const baseEdit = createEditToolDefinition(ctx.cwd);
     const baseWrite = createWriteToolDefinition(ctx.cwd);
@@ -175,6 +230,12 @@ export default function (pi: ExtensionAPI) {
     const editTool: typeof baseEdit = {
       ...baseEdit,
       async execute(toolCallId, params, signal, onUpdate, executeCtx) {
+        // Before the tool writes: this is the only moment the file's
+        // pre-session state still exists anywhere.
+        baselines.capture(
+          storeKeyFor(ctx.cwd, params.path),
+          absolutePathOf(ctx.cwd, params.path),
+        );
         return executeAndRecord({
           toolCallId,
           params,
@@ -184,6 +245,7 @@ export default function (pi: ExtensionAPI) {
           store,
           calls,
           at: Date.now(),
+          onRecorded: resolve,
         });
       },
       renderCall(args, theme, context) {
@@ -265,6 +327,10 @@ export default function (pi: ExtensionAPI) {
       // is where they get it.
       renderShell: "self",
       async execute(toolCallId, params, signal, onUpdate, executeCtx) {
+        baselines.capture(
+          storeKeyFor(ctx.cwd, params.path),
+          absolutePathOf(ctx.cwd, params.path),
+        );
         return executeAndRecord({
           toolCallId,
           params,
@@ -274,6 +340,7 @@ export default function (pi: ExtensionAPI) {
           store,
           calls,
           at: Date.now(),
+          onRecorded: resolve,
         });
       },
       renderCall(args, theme, context) {
@@ -433,7 +500,7 @@ export default function (pi: ExtensionAPI) {
     description: "Browse files changed in this session",
     handler: async (_args, ctx) => {
       if (ctx.mode !== "tui") return;
-      await browseChangedFiles(ctx, store, ctx.cwd, viewerState);
+      await browseChangedFiles(ctx, store, ctx.cwd, viewerState, resolve);
     },
   });
 
@@ -441,7 +508,7 @@ export default function (pi: ExtensionAPI) {
     description: "Browse changed files",
     handler: async (ctx) => {
       if (ctx.mode !== "tui") return;
-      await browseChangedFiles(ctx, store, ctx.cwd, viewerState);
+      await browseChangedFiles(ctx, store, ctx.cwd, viewerState, resolve);
     },
   });
 }

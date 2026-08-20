@@ -240,10 +240,10 @@ test("a new file is in the store the moment the write returns", async () => {
   assert.deepEqual(listed, ["src/new.ts"]);
 });
 
-test("a write over an existing file lands settled but with no hunks", async () => {
-  // write reports no patch, so the store row is complete except for the diff;
-  // the viewer's needsHunkResolution picks exactly this shape up and fills it
-  // in from git HEAD.
+test("a write over an existing file lands with no hunks, and pending", async () => {
+  // write reports no patch at all, so the record arrives with counts and no
+  // diff. Pending is the honest state: only the resolver, holding the file's
+  // baseline, can say what the session did to it.
   const store = createFileEditStore();
   const calls = createCallRecords();
   await executeAndRecord({
@@ -259,7 +259,7 @@ test("a write over an existing file lands settled but with no hunks", async () =
   assert.equal(change.isNew, false);
   assert.equal(change.added, 2);
   assert.deepEqual(change.hunks, []);
-  assert.equal(change.hunksPending, false);
+  assert.equal(change.hunksPending, true);
   store.resolveHunks("src/old.ts", { hunks: [], added: 6, removed: 4 });
   assert.equal(store.get("src/old.ts")!.added, 6);
 });

@@ -31,6 +31,13 @@ export interface FileChange {
   /** Path relative to the session cwd. Also the store key. */
   readonly path: string;
   readonly hunks: ReadonlyArray<Hunk>;
+  /**
+   * Unified patches reported by whoever made the change, oldest first. The
+   * last resort for a diff: used only when no baseline can be established for
+   * the file, since a baseline describes the whole session and these describe
+   * single calls.
+   */
+  readonly patches: ReadonlyArray<string>;
   readonly added: number;
   readonly removed: number;
   /** Number of tool calls that touched this file this session. */
@@ -40,11 +47,11 @@ export interface FileChange {
   readonly updatedAt: number;
   readonly origin: ChangeOrigin;
   /**
-   * True when the hunks are not the whole file's story yet: a tool reported no
-   * usable patch, so the record carries zero hunks and the viewer resolves on
-   * emptiness instead, a child session made the change and its diff is
-   * computed lazily against HEAD, or a local edit landed on a file a child had
-   * already touched, so what we hold describes one call and not the file.
+   * True until the hunks have been resolved as a whole-session diff. A record
+   * starts out holding whatever one tool call reported — or nothing at all,
+   * for a `write` or a child session — and the resolver replaces that with the
+   * file's baseline-to-disk diff, which is the only thing the counts beside it
+   * can honestly describe.
    */
   readonly hunksPending: boolean;
 }

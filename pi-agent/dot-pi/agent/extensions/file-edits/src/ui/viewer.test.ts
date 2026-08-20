@@ -32,28 +32,35 @@ function change(overrides: Partial<FileChange> = {}): FileChange {
     isNew: false,
     updatedAt: 0,
     origin: { kind: "self" },
+    patches: [],
     hunksPending: false,
     ...overrides,
   };
 }
 
-test("a change with hunks needs nothing from git", () => {
-  assert.equal(needsHunkResolution(change()), false);
-});
-
-test("a child's change still needs resolving", () => {
+test("every held change is resolved on open, hunks or not", () => {
+  // Resolution is a file read and a diff. Anything cheaper goes stale: hunks
+  // resolved three edits ago describe the file as it was three edits ago.
+  assert.equal(needsHunkResolution(change()), true);
+  assert.equal(needsHunkResolution(change({ hunks: [] })), true);
   assert.equal(needsHunkResolution(change({ hunksPending: true })), true);
 });
 
-test("a written file needs resolving even though nothing is pending", () => {
-  // write reports no patch at all (record.ts measureWrite), so the record
-  // arrives with zero hunks and hunksPending already false. Without this
-  // case the viewer draws an empty panel.
-  assert.equal(needsHunkResolution(change({ hunks: [] })), true);
+test("a change the store no longer holds resolves nothing", () => {
+  assert.equal(needsHunkResolution(undefined), false);
 });
 
 test("an untracked file is described, not left blank", () => {
   assert.match(emptyBodyMessage(change({ hunks: [] })) ?? "", /no diff/i);
+});
+
+test("the resolver's own account of an empty diff wins over the guess", () => {
+  const note = "no changes: the file matches what it was when the session started";
+  assert.equal(emptyBodyMessage(change({ hunks: [] }), note), note);
+});
+
+test("a note cannot blank out a diff that does exist", () => {
+  assert.equal(emptyBodyMessage(change(), "ignored"), null);
 });
 
 test("a change with hunks has no placeholder", () => {
@@ -183,6 +190,7 @@ function viewerFor(
     "src/a.ts",
     { mode },
     ["src/a.ts"],
+    undefined,
     () => {},
   );
 }
@@ -206,6 +214,7 @@ function renderAt(width: number, mode: ViewMode): string[] {
     "src/a.ts",
     { mode },
     ["src/a.ts"],
+    undefined,
     () => {},
   );
   const lines = viewer.render(width);

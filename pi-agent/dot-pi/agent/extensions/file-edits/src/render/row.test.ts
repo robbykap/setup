@@ -62,6 +62,7 @@ const change = {
   isNew: false,
   updatedAt: 0,
   origin: { kind: "self" } as const,
+  patches: [],
   hunksPending: false,
 };
 
