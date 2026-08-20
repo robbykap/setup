@@ -5,12 +5,15 @@ import { getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
 import type { DiffLine, FileChange } from "../domain.ts";
 import { createFileEditStore } from "../store.ts";
 import {
+  ADDED_EMPHASIS_OPENER,
   ADDED_OPENER,
   codeBody,
+  emphasisRanges,
   DiffViewer,
   emptyBodyMessage,
   highlightForChange,
   needsHunkResolution,
+  REMOVED_EMPHASIS_OPENER,
   REMOVED_OPENER,
   serializeHunks,
   type ViewMode,
@@ -311,6 +314,67 @@ test("a context line keeps its highlighting even beside a counterpart", () => {
   // Only changed lines get intraline spans; a context line never does, so its
   // highlighting survives.
   assert.equal(codeBody(theme, CONTEXT, "const a = 2", HIGHLIGHTED), HIGHLIGHTED);
+});
+
+// --- emphasis over highlighting ---------------------------------------------
+
+const strip = (text: string) => text.replaceAll(/\x1b\[[0-9;]*m/g, "");
+
+const ADDED_LINE: DiffLine = { kind: "add", text: "const a = 1", newLine: 1 };
+const REMOVED_LINE: DiffLine = { kind: "remove", text: "const a = 2", oldLine: 1 };
+
+test("a changed line keeps its syntax colours and gains the emphasis tint", () => {
+  // The regression this replaced: highlighting was dropped entirely on any
+  // line with a counterpart, so the eye lost the code to find the change.
+  const body = codeBody(theme, ADDED_LINE, "const a = 2", HIGHLIGHTED);
+
+  assert.ok(body.includes("\x1b[38;2;1;2;3m"), "syntax colour survived");
+  assert.ok(body.includes(ADDED_EMPHASIS_OPENER), "changed words are emphasised");
+  assert.equal(strip(body), "const a = 1");
+});
+
+test("emphasis closes back to the line's own tint, never to a reset", () => {
+  // The row sits on its tint edge to edge; a reset here would punch a hole in
+  // it that fillLine has no reason to repair.
+  const body = codeBody(theme, REMOVED_LINE, "const a = 1", "const a = 2");
+
+  assert.ok(body.includes(REMOVED_EMPHASIS_OPENER));
+  assert.ok(body.includes(REMOVED_EMPHASIS_OPENER + "2"));
+  assert.ok(body.includes(REMOVED_OPENER), "closed back to the soft tint");
+});
+
+test("only the words that differ are emphasised", () => {
+  const body = codeBody(theme, ADDED_LINE, "const a = 2", "const a = 1");
+  const upTo = body.indexOf(ADDED_EMPHASIS_OPENER);
+
+  assert.ok(upTo > 0);
+  // Everything before the first emphasis is the shared prefix.
+  assert.equal(strip(body.slice(0, upTo)), "const a = ");
+});
+
+test("a line whose counterpart differs nowhere is left alone", () => {
+  const body = codeBody(theme, ADDED_LINE, ADDED_LINE.text, HIGHLIGHTED);
+  assert.equal(body, HIGHLIGHTED);
+});
+
+test("emphasis adds no visible cells", () => {
+  // The invariant every overlay line in this panel lives by.
+  const plain = "const alpha = 1";
+  const line: DiffLine = { kind: "add", text: plain, newLine: 1 };
+  assert.equal(strip(codeBody(theme, line, "const beta = 1", plain)), plain);
+});
+
+test("ranges are converted through the line, not accumulated", () => {
+  // wordSpans counts UTF-16 units and overlayRanges counts code points; an
+  // astral character is where the two disagree.
+  const ranges = emphasisRanges(
+    [
+      { text: "a\u{1F600}", changed: false },
+      { text: "b", changed: true },
+    ],
+    "a\u{1F600}b",
+  );
+  assert.deepEqual(ranges, [{ start: 2, end: 3 }]);
 });
 
 // --- what `y` puts on the clipboard -----------------------------------------

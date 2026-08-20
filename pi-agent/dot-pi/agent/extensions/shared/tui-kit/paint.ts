@@ -78,3 +78,13 @@ export function paintSelected(
  */
 export const DIFF_ADDED_BG: Rgb = [40, 52, 46];
 export const DIFF_REMOVED_BG: Rgb = [56, 40, 50];
+
+/**
+ * The same two tints, pushed roughly twice as far from the base, for the words
+ * within a replaced line that actually changed. Emphasis by background rather
+ * than by inverse video: inverting swaps the syntax colour out for the tint,
+ * which is precisely the information the eye came for. These stay dark enough
+ * that a highlighted keyword or string reads normally on top.
+ */
+export const DIFF_ADDED_EMPHASIS_BG: Rgb = [50, 74, 46];
+export const DIFF_REMOVED_EMPHASIS_BG: Rgb = [82, 50, 54];

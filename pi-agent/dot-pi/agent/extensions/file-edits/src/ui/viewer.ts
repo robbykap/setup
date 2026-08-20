@@ -22,10 +22,13 @@ import {
 } from "../../../shared/tui-kit/highlight.ts";
 import {
   DIFF_ADDED_BG,
+  DIFF_ADDED_EMPHASIS_BG,
   DIFF_REMOVED_BG,
+  DIFF_REMOVED_EMPHASIS_BG,
   fillLine,
   rgbBgOpener,
 } from "../../../shared/tui-kit/paint.ts";
+import { overlayRanges, type Range } from "../../../shared/tui-kit/ansi-spans.ts";
 import { copyText } from "../../../shared/tui-kit/copy.ts";
 import {
   applyTopAnchored,
@@ -126,12 +129,48 @@ export function serializeHunks(hunks: ReadonlyArray<Hunk>): string {
  * against a hand-copied escape sequence. */
 export const ADDED_OPENER = rgbBgOpener(DIFF_ADDED_BG);
 export const REMOVED_OPENER = rgbBgOpener(DIFF_REMOVED_BG);
+export const ADDED_EMPHASIS_OPENER = rgbBgOpener(DIFF_ADDED_EMPHASIS_BG);
+export const REMOVED_EMPHASIS_OPENER = rgbBgOpener(DIFF_REMOVED_EMPHASIS_BG);
 
 /** The background a line sits on: none for context, a tint for a change. */
 function tintOpener(kind: DiffLine["kind"]): string {
   if (kind === "add") return ADDED_OPENER;
   if (kind === "remove") return REMOVED_OPENER;
   return "";
+}
+
+/** The background under the words that differ, a shade further out. */
+function emphasisOpener(kind: DiffLine["kind"]): string {
+  if (kind === "add") return ADDED_EMPHASIS_OPENER;
+  if (kind === "remove") return REMOVED_EMPHASIS_OPENER;
+  return "";
+}
+
+/**
+ * Word spans, as ranges over the line's visible characters.
+ *
+ * wordSpans counts in UTF-16 units (its tokenizer has no `u` flag) and
+ * overlayRanges counts code points, so every boundary is converted through the
+ * line itself rather than accumulated. Lines are short; this costs nothing,
+ * for the same reason the word LCS upstream of it does not.
+ */
+export function emphasisRanges(
+  spans: ReadonlyArray<{ readonly text: string; readonly changed: boolean }>,
+  text: string,
+): Range[] {
+  const ranges: Range[] = [];
+  let unit = 0;
+  for (const span of spans) {
+    const end = unit + span.text.length;
+    if (span.changed) {
+      ranges.push({
+        start: [...text.slice(0, unit)].length,
+        end: [...text.slice(0, end)].length,
+      });
+    }
+    unit = end;
+  }
+  return ranges;
 }
 
 /** One highlight pass per hunk, zipped back line-for-line. The WeakMap keys
@@ -158,8 +197,13 @@ export function highlightForChange(change: FileChange): Map<DiffLine, string> {
 }
 
 /**
- * The code half of a line: syntax-highlighted, or — when the line has a
- * counterpart — painted flat with the words that differ inverted.
+ * The code half of a line: syntax-highlighted, always, with the words that
+ * differ raised onto a stronger tint.
+ *
+ * Highlighting used to be dropped on any line with a counterpart, because the
+ * word spans are offsets into raw text and there was no way to lay them over
+ * an already-coloured string. overlayRanges is that way, so the two no longer
+ * compete: the colour says what the code IS, the background says what changed.
  */
 export function codeBody(
   theme: Theme,
@@ -168,26 +212,27 @@ export function codeBody(
   highlighted: string,
 ): string {
   const color = lineColor(line.kind);
-  if (counterpart === undefined || line.kind === "context") {
-    // highlightBlock hands back the input unchanged when the language is
-    // unknown or the theme has no colours; fall back to a flat diff colour
-    // rather than emitting an uncoloured row.
-    return highlighted === line.text ? theme.fg(color, line.text) : highlighted;
-  }
-  // Syntax highlighting is intentionally skipped on these lines: the word
-  // spans are offsets into the raw text, and they cannot be mapped onto an
-  // already-ANSI-coloured string.
+  // highlightBlock hands back the input unchanged when the language is unknown
+  // or the theme has no colours; fall back to a flat diff colour rather than
+  // emitting an uncoloured row.
+  const body =
+    highlighted === line.text ? theme.fg(color, line.text) : highlighted;
+  if (counterpart === undefined || line.kind === "context") return body;
+
   const spans =
     line.kind === "remove"
       ? wordSpans(line.text, counterpart).removed
       : wordSpans(counterpart, line.text).added;
-  return spans
-    .map((span) =>
-      span.changed
-        ? theme.inverse(theme.fg(color, span.text))
-        : theme.fg(color, span.text),
-    )
-    .join("");
+  const ranges = emphasisRanges(spans, line.text);
+  if (ranges.length === 0) return body;
+  // Closing back to the line's own tint, not to a reset: the row sits on that
+  // tint from end to end, and a reset here would punch a hole in it.
+  return overlayRanges(
+    body,
+    ranges,
+    emphasisOpener(line.kind),
+    tintOpener(line.kind),
+  );
 }
 
 export class DiffViewer implements Component {
