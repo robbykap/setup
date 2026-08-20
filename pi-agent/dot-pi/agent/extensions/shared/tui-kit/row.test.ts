@@ -79,6 +79,22 @@ test("a too-long header truncates instead of wrapping", () => {
   );
   assert.equal(lines.length, 1);
   assert.ok(visibleWidth(lines[0]!) <= 30);
+  assert.ok(lines[0]!.includes("✓"));
+});
+
+test("an ANSI-painted title still aligns the right-aligned outcome", () => {
+  const lines = renderToolRow(
+    {
+      icon: UI_ICONS.terminal,
+      title: theme.bold(theme.fg("text", "npm test")),
+      right: "✓ ok",
+    },
+    40,
+    theme,
+  );
+  assert.equal(lines.length, 1);
+  assert.equal(visibleWidth(lines[0]!), 40);
+  assert.ok(lines[0]!.includes("✓ ok"));
 });
 
 test("toolCallTitle paints icon, bold name, and detail", () => {
