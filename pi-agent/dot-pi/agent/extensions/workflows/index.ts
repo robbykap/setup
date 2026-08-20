@@ -37,6 +37,7 @@ import { formatActivityStatus } from "../shared/activity-status.ts";
 import { CHILD_FILE_CHANNEL } from "../shared/dashboard-state.ts";
 import { COMMAND_CHANNEL } from "../shared/command-log.ts";
 import { UI_ICONS, paintIcon } from "../shared/tui-kit/icons.ts";
+import { errorLine } from "../shared/tui-kit/row.ts";
 import { createWorkflowPersistence, persistWorkflowJson } from "./artifacts.ts";
 import { RunController } from "./controller.ts";
 import { sessionWorkflowRunIds, showWorkflowDashboard } from "./dashboard.ts";
@@ -759,7 +760,7 @@ export default function workflows(pi: ExtensionAPI) {
         const first = result.content[0];
         const text = first?.type === "text" ? first.text : "(no output)";
         return new Text(
-          context.isError ? theme.fg("error", `✗ ${text}`) : text,
+          context.isError ? errorLine(text, theme) : text,
           0,
           0,
         );

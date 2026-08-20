@@ -31,6 +31,7 @@ import {
 } from "../shared/tui-kit/frame.ts";
 import { UI_ICONS, paintIcon } from "../shared/tui-kit/icons.ts";
 import { paintSelected } from "../shared/tui-kit/paint.ts";
+import { errorLine } from "../shared/tui-kit/row.ts";
 
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 5;
@@ -398,7 +399,7 @@ export default function askUser(pi: ExtensionAPI) {
         const first = result.content[0];
         const text = first?.type === "text" ? first.text : "";
         return new Text(
-          context.isError ? theme.fg("error", `✗ ${text}`) : text,
+          context.isError ? errorLine(text, theme) : text,
           0,
           0,
         );

@@ -55,6 +55,7 @@ import {
   type CommandLogEvent,
 } from "../shared/command-log.ts";
 import { UI_ICONS, paintIcon } from "../shared/tui-kit/icons.ts";
+import { errorLine } from "../shared/tui-kit/row.ts";
 
 export function makeBinaryInitializers(
   binDir: string,
@@ -335,7 +336,7 @@ export default function fileSearchTools(pi: ExtensionAPI) {
       if (context.isError) {
         const first = result.content[0];
         const reason = first?.type === "text" ? first.text : "search failed";
-        return new Text(theme.fg("error", `✗ ${reason}`), 0, 0);
+        return new Text(errorLine(reason, theme), 0, 0);
       }
       const details = result.details;
       if (!details || details.matchCount === 0) {
@@ -414,7 +415,7 @@ export default function fileSearchTools(pi: ExtensionAPI) {
       if (context.isError) {
         const first = result.content[0];
         const reason = first?.type === "text" ? first.text : "search failed";
-        return new Text(theme.fg("error", `✗ ${reason}`), 0, 0);
+        return new Text(errorLine(reason, theme), 0, 0);
       }
       const details = result.details;
       if (!details || details.outputLines === 0) {

@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { initTheme, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { UI_ICONS } from "./icons.ts";
-import { peekLine, plainResultText, renderToolRow, toolCallTitle } from "./row.ts";
+import { errorLine, peekLine, plainResultText, renderToolRow, toolCallTitle } from "./row.ts";
 
 // plainResultText's more-lines hint goes through keyHint(), which reads the
 // global theme singleton and throws until it has been initialized.
@@ -197,4 +197,40 @@ test("plainResultText paints success lines with toolOutput", () => {
     { expanded: true },
   );
   assert.equal(text, theme.fg("toolOutput", "ok"));
+});
+
+test("errorLine sanitizes ANSI/control bytes and marks the first line", () => {
+  const dirty = "\x1b[31mboom\x1b[0m\x07 raw stderr";
+  const text = errorLine(dirty, theme);
+  assert.ok(!text.includes("\x1b[31m"));
+  assert.ok(!text.includes("\x07"));
+  assert.ok(text.includes("✗ boom raw stderr"));
+});
+
+test("errorLine caps at 10 lines like plainResultText", () => {
+  const body = Array.from({ length: 25 }, (_, i) => `line ${i}`).join("\n");
+  const text = errorLine(body, theme);
+  const lines = text.split("\n");
+  assert.equal(lines.length, 11);
+  assert.ok(lines.at(-1)!.includes("more lines"));
+});
+
+test("errorLine paints every line with error", () => {
+  const text = errorLine("one\ntwo", theme);
+  assert.equal(
+    text,
+    `${theme.fg("error", "✗ one")}\n${theme.fg("error", "two")}`,
+  );
+});
+
+test("toolCallTitle folds whitespace runs and caps a long detail", () => {
+  const title = toolCallTitle(
+    UI_ICONS.terminal,
+    "bg_start\n  name",
+    "a\n\nb  " + "c".repeat(100),
+    theme,
+  );
+  assert.ok(!title.includes("\n"));
+  assert.ok(!title.includes("  "));
+  assert.ok(title.includes("…"));
 });

@@ -218,18 +218,12 @@ export default function (pi: ExtensionAPI) {
     }),
     renderShell: "self",
     renderCall(args, theme) {
-      // A heredoc or multi-line command must not multiply transcript rows;
-      // fold to one line, then cap so a giant command doesn't dominate it.
-      const folded = [
+      const detail = [
         typeof args.title === "string" ? args.title : undefined,
-        typeof args.command === "string"
-          ? args.command.replace(/\s+/g, " ").trim()
-          : undefined,
+        typeof args.command === "string" ? args.command : undefined,
       ]
         .filter(Boolean)
         .join(" · ");
-      const detail =
-        folded.length > 80 ? `${folded.slice(0, 79)}…` : folded;
       return new Text(
         toolCallTitle(UI_ICONS.terminal, "bg_start", detail || undefined, theme),
         0,
