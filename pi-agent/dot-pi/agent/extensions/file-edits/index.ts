@@ -31,12 +31,13 @@ import {
   createEditToolDefinition,
   createReadToolDefinition,
   createWriteToolDefinition,
+  type ReadToolDetails,
 } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
 import { formatFilesStatus } from "./src/status.ts";
 import type { FileChange } from "./src/domain.ts";
 import { failedCallPath, failedChange, failureReason } from "./src/failure.ts";
 import { observeChildFiles } from "./src/observe.ts";
+import { storeKeyFor } from "./src/paths.ts";
 import {
   createCallRecords,
   executeAndRecord,
@@ -48,8 +49,11 @@ import {
   CollapsedRow,
   EmptyRow,
   NoteRow,
+  ReadCallRow,
+  ReadResultRow,
   delegationContext,
   paintPath,
+  readDelegation,
 } from "./src/render/row.ts";
 import { boxedDelegation, shellBg } from "../shared/tui-kit/boxed.ts";
 import { iconFor, paintIcon } from "../shared/tui-kit/icons.ts";
@@ -60,9 +64,39 @@ const STATUS_KEY = "file-edits";
 
 type Theme = ExtensionContext["ui"]["theme"];
 
-/** Fold an error reason to one line: the collapsed row has no room for a
- * multi-line trace, and read's own errors are usually one sentence anyway. */
-const oneLineOf = (text: string) => text.replace(/\s+/g, " ").trim();
+/** Line count the way read itself counts (pi's truncateHead convention):
+ * a trailing newline is not an extra empty line. */
+function countTextLines(text: string): number {
+  if (text.length === 0) return 0;
+  const lines = text.split("\n");
+  if (text.endsWith("\n")) lines.pop();
+  return lines.length;
+}
+
+/** "read N lines", honest about what actually reached the model: a
+ * truncated read counts from `details.truncation` (which also carries the
+ * total, for the "(truncated)" marker) rather than the displayed text,
+ * which read.js appends a continuation notice to (read.js:232,243). */
+function readLineSummary(text: string, details: ReadToolDetails | undefined): string {
+  const truncation = details?.truncation;
+  const shown = truncation ? truncation.outputLines : countTextLines(text);
+  const label = shown === 1 ? "line" : "lines";
+  const marker =
+    truncation?.truncated ? ` of ${truncation.totalLines} (truncated)` : "";
+  return `read ${shown} ${label}${marker}`;
+}
+
+/** The dim `:start-end` suffix read.js prints for a sliced read
+ * (formatReadLineRange, read.js:32-38), so a collapsed row says so too. */
+function formatReadRange(
+  args: { offset?: number; limit?: number },
+  theme: Theme,
+): string {
+  if (args.offset === undefined && args.limit === undefined) return "";
+  const start = args.offset ?? 1;
+  const end = args.limit !== undefined ? start + args.limit - 1 : undefined;
+  return theme.fg("dim", `:${start}${end !== undefined ? `-${end}` : ""}`);
+}
 
 export default function (pi: ExtensionAPI) {
   const store = createFileEditStore();
@@ -109,6 +143,14 @@ export default function (pi: ExtensionAPI) {
   /** renderCall draws the whole row when collapsed, so the result slot has
    * nothing left to add. An empty container renders no lines. */
   const noResult = () => new EmptyRow();
+
+  const readCallRow = (lastComponent: unknown) =>
+    lastComponent instanceof ReadCallRow ? lastComponent : new ReadCallRow();
+
+  const readResultRow = (lastComponent: unknown) =>
+    lastComponent instanceof ReadResultRow
+      ? lastComponent
+      : new ReadResultRow();
 
   pi.on("session_start", (_event, ctx: ExtensionContext) => {
     ui = ctx.mode === "tui" ? ctx.ui : undefined;
@@ -292,47 +334,69 @@ export default function (pi: ExtensionAPI) {
     };
     pi.registerTool(writeTool);
 
+    // No settings accessor on ExtensionContext reaches the image-resize
+    // option a real session passes (agent-session.js:2018 reads it off
+    // SettingsManager, which extensions cannot see) — this pins the
+    // built-in's own default (autoResizeImages: true) instead.
     const baseRead = createReadToolDefinition(ctx.cwd);
     const readTool: typeof baseRead = {
       ...baseRead,
       // The built-in sets no shell (read.js has no renderShell), so without
       // this pi paints its own colored Box around our plain rows
-      // (tool-execution.js:50). Expanded and streaming views still delegate
-      // to the built-in, which renders plain Text and needs no shell back.
+      // (tool-execution.js:50). Expanded delegates to the built-in, which
+      // wants that shell back — boxedDelegation below is where it gets one,
+      // the same way write's expanded view does.
       renderShell: "self",
       renderCall(args, theme, context) {
-        // Expanded is the built-in's own view. It caches a plain pi-tui
-        // `Text` on lastComponent and only ever calls `setText` on it
-        // (read.js:265,274) — our collapsed rows are Text too, so handing
-        // context straight through (rather than hiding lastComponent) is
-        // harmless either way; a probe confirmed no stale content or crash
-        // across expanded/collapsed transitions.
         if (context.expanded) {
-          return baseRead.renderCall!(args, theme, context);
+          return boxedDelegation(
+            context,
+            1,
+            shellBg(theme, context),
+            readDelegation,
+            (ctx) => baseRead.renderCall!(args, theme, ctx),
+          );
         }
         const path = typeof args.path === "string" ? args.path : "";
-        return new Text(
-          `${paintIcon(iconFor(path))} ${paintPath(path, theme)}`,
-          0,
-          0,
+        const key = path ? storeKeyFor(ctx.cwd, path) : path;
+        const row = readCallRow(context.lastComponent);
+        row.update(
+          `${paintIcon(iconFor(key))} ${paintPath(key, theme)}${formatReadRange(args, theme)}`,
         );
+        return row;
       },
       renderResult(result, options, theme, context) {
-        if (options.expanded || context.expanded || options.isPartial) {
-          return baseRead.renderResult!(result, options, theme, context);
+        const expanded = options.expanded || context.expanded;
+        if (expanded) {
+          return boxedDelegation(context, 0, undefined, readDelegation, (ctx) =>
+            baseRead.renderResult!(result, options, theme, ctx),
+          );
         }
-        const first = result.content[0];
+        if (options.isPartial) {
+          return baseRead.renderResult!(result, options, theme, readDelegation(context));
+        }
         if (context.isError) {
-          const reason = first?.type === "text" ? first.text : "failed";
-          return new Text(theme.fg("error", `\u2717 ${oneLineOf(reason ?? "failed")}`), 0, 0);
+          const reason = failureReason(result.content);
+          if (!reason) return noResult();
+          // Read has no CollapsedRow header carrying a ✗ the way edit/write's
+          // NoteRow does — the gutter line here IS the error row, so it is
+          // built and painted directly rather than through NoteRow.
+          const row = readResultRow(context.lastComponent);
+          row.update(`   │ ${theme.fg("error", `✗ ${reason}`)}`);
+          return row;
         }
         // Image reads return a text note plus an { type: "image" } block
-        // (read.js:191-196) \u2014 no line count applies.
+        // (read.js:191-196) — no line count applies.
         if (result.content.some((block) => block.type === "image")) {
-          return new Text(theme.fg("dim", "   \u2502 read image"), 0, 0);
+          const row = readResultRow(context.lastComponent);
+          row.update(theme.fg("dim", "   │ read image"));
+          return row;
         }
-        const lines = first?.type === "text" ? first.text.split("\n").length : 0;
-        return new Text(theme.fg("dim", `   \u2502 read ${lines} lines`), 0, 0);
+        const first = result.content[0];
+        const text = first?.type === "text" ? first.text : "";
+        const row = readResultRow(context.lastComponent);
+        row.update(theme.fg("dim", `   │ ${readLineSummary(text, result.details)}`));
+        return row;
       },
     };
     pi.registerTool(readTool);

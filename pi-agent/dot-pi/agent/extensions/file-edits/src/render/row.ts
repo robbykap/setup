@@ -8,7 +8,7 @@
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Container } from "@earendil-works/pi-tui";
+import { Container, Text } from "@earendil-works/pi-tui";
 import { largestHunk } from "../diff.ts";
 import type { FileChange } from "../domain.ts";
 import { iconFor } from "../../../shared/tui-kit/icons.ts";
@@ -93,6 +93,30 @@ export class NoteRow extends Container {
  * from a Container a built-in made for itself. */
 export class EmptyRow extends Container {}
 
+/** read's collapsed call row: icon, path, optional offset/limit range —
+ * plain enough that a bare Text subclass is all `readDelegation` needs to
+ * tell it apart from the built-in's own Text. */
+export class ReadCallRow extends Text {
+  constructor() {
+    super("", 0, 0);
+  }
+
+  update(text: string): void {
+    this.setText(text);
+  }
+}
+
+/** read's collapsed result row: one gutter line, success or failure. */
+export class ReadResultRow extends Text {
+  constructor() {
+    super("", 0, 0);
+  }
+
+  update(text: string): void {
+    this.setText(text);
+  }
+}
+
 /**
  * The context to hand a built-in renderer when delegating. A slot's
  * `lastComponent` is whatever that slot returned last time
@@ -110,6 +134,18 @@ export function delegationContext<T extends { lastComponent: unknown }>(
     context.lastComponent instanceof EmptyRow ||
     context.lastComponent instanceof NoteRow ||
     context.lastComponent instanceof BoxedDelegate;
+  return ours ? { ...context, lastComponent: undefined } : context;
+}
+
+/** The same trade as `delegationContext`, scoped to read's own two row
+ * classes: hiding only those (rather than reusing `delegationContext`) keeps
+ * a stray `BoxedDelegate` from a different slot from being torn down here. */
+export function readDelegation<T extends { lastComponent: unknown }>(
+  context: T,
+): T {
+  const ours =
+    context.lastComponent instanceof ReadCallRow ||
+    context.lastComponent instanceof ReadResultRow;
   return ours ? { ...context, lastComponent: undefined } : context;
 }
 

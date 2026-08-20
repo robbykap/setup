@@ -107,19 +107,23 @@ test("edit and write collapse to the same lines", () => {
   assert.deepEqual(renderSettledError("write", ARGS.write), renderSettledError("edit", ARGS.edit));
 });
 
-test("read: a settled collapsed call has no box around it", () => {
-  const component = new ToolExecutionComponent(
+function readRow(callId: string, args: unknown) {
+  return new ToolExecutionComponent(
     "read",
-    "call-read",
-    { path: "a.ts" },
+    callId,
+    args,
     {},
     tools.get("read") as never,
     { requestRender() {} } as never,
     CWD,
   );
+}
+
+test("read: a settled collapsed call has no box around it", () => {
+  const component = readRow("call-read", { path: "a.ts" });
   component.setArgsComplete();
   component.updateResult(
-    { content: [{ type: "text", text: "1: hello\n2: world" }], isError: false },
+    { content: [{ type: "text", text: "hello\nworld" }], isError: false },
     false,
   );
   const lines = component.render(60);
@@ -130,35 +134,36 @@ test("read: a settled collapsed call has no box around it", () => {
 });
 
 test("read: an expanded call delegates to the built-in and still renders", () => {
-  const component = new ToolExecutionComponent(
-    "read",
-    "call-read-expanded",
-    { path: "a.ts" },
-    {},
-    tools.get("read") as never,
-    { requestRender() {} } as never,
-    CWD,
-  );
+  const component = readRow("call-read-expanded", { path: "a.ts" });
   component.setArgsComplete();
   component.setExpanded(true);
   component.updateResult(
-    { content: [{ type: "text", text: "1: hello\n2: world" }], isError: false },
+    { content: [{ type: "text", text: "hello\nworld" }], isError: false },
     false,
   );
   const lines = component.render(60);
   assert.ok(lines.join("\n").includes("hello"));
 });
 
-test("read: a settled collapsed error has no box and shows the reason", () => {
-  const component = new ToolExecutionComponent(
-    "read",
-    "call-read-error",
-    { path: "missing.ts" },
-    {},
-    tools.get("read") as never,
-    { requestRender() {} } as never,
-    CWD,
+test("read: expanded gets the box back, matching write", () => {
+  // "self" took pi's shell Box away so collapsed rows stay plain; expanded
+  // restores it the same way write's does.
+  const component = readRow("call-read-expanded-box", { path: "a.ts" });
+  component.setArgsComplete();
+  component.setExpanded(true);
+  component.updateResult(
+    { content: [{ type: "text", text: "hello\nworld" }], isError: false },
+    false,
   );
+  const lines = component.render(60);
+  assert.ok(
+    lines.some((line) => line.includes("\x1b[48")),
+    JSON.stringify(lines),
+  );
+});
+
+test("read: a settled collapsed error has no box and shows the reason", () => {
+  const component = readRow("call-read-error", { path: "missing.ts" });
   component.setArgsComplete();
   component.updateResult(
     { content: [{ type: "text", text: "ENOENT: no such file" }], isError: true },
@@ -169,4 +174,110 @@ test("read: a settled collapsed error has no box and shows the reason", () => {
     assert.ok(!line.includes("\x1b[48"), JSON.stringify(line));
   }
   assert.ok(lines.join("\n").includes("ENOENT"));
+});
+
+test("read: a failure reason with escape codes renders sanitized", () => {
+  const component = readRow("call-read-error-ansi", { path: "missing.ts" });
+  component.setArgsComplete();
+  component.updateResult(
+    {
+      content: [{ type: "text", text: "\x1b[31mENOENT\x1b[0m: no such file" }],
+      isError: true,
+    },
+    false,
+  );
+  const lines = component.render(60);
+  const joined = lines.join("\n");
+  assert.ok(joined.includes("ENOENT: no such file"), joined);
+  assert.ok(!joined.includes("\x1b[31m"), joined);
+});
+
+test("read: a collapsed call row carries an icon glyph", () => {
+  const component = readRow("call-read-icon", { path: "a.ts" });
+  component.setArgsComplete();
+  component.updateResult(
+    { content: [{ type: "text", text: "hello\n" }], isError: false },
+    false,
+  );
+  const lines = component.render(60);
+  // The icon is painted with a 24-bit foreground escape (paintIcon).
+  assert.ok(
+    lines.some((line) => line.includes("\x1b[38;2;")),
+    JSON.stringify(lines),
+  );
+});
+
+test("read: the line count is honest, not off by the split() trailing empty", () => {
+  const component = readRow("call-read-count", { path: "a.ts" });
+  component.setArgsComplete();
+  component.updateResult(
+    { content: [{ type: "text", text: "a\nb\nc\n" }], isError: false },
+    false,
+  );
+  const lines = component.render(60);
+  assert.ok(lines.join("\n").includes("read 3 lines"), JSON.stringify(lines));
+});
+
+test("read: a single line is singular", () => {
+  const component = readRow("call-read-singular", { path: "a.ts" });
+  component.setArgsComplete();
+  component.updateResult(
+    { content: [{ type: "text", text: "only line\n" }], isError: false },
+    false,
+  );
+  const lines = component.render(60);
+  assert.ok(lines.join("\n").includes("read 1 line"), JSON.stringify(lines));
+  assert.ok(!lines.join("\n").includes("read 1 lines"), JSON.stringify(lines));
+});
+
+test("read: a truncated result counts from details.truncation, not the text", () => {
+  const component = readRow("call-read-truncated", { path: "big.ts" });
+  component.setArgsComplete();
+  component.updateResult(
+    {
+      content: [
+        {
+          type: "text",
+          text: "a\nb\n\n[Showing lines 1-2 of 500. Use offset=3 to continue.]",
+        },
+      ],
+      isError: false,
+      details: {
+        truncation: {
+          content: "a\nb",
+          truncated: true,
+          truncatedBy: "lines",
+          totalLines: 500,
+          totalBytes: 1000,
+          outputLines: 2,
+          outputBytes: 3,
+          lastLinePartial: false,
+          firstLineExceedsLimit: false,
+          maxLines: 2,
+          maxBytes: 1000,
+        },
+      },
+    },
+    false,
+  );
+  const lines = component.render(60);
+  const joined = lines.join("\n");
+  assert.ok(joined.includes("read 2 lines of 500 (truncated)"), joined);
+});
+
+test("read: an image result says so and does not crash", () => {
+  const component = readRow("call-read-image", { path: "a.png" });
+  component.setArgsComplete();
+  component.updateResult(
+    {
+      content: [
+        { type: "text", text: "Read image file [image/png]" },
+        { type: "image", data: "AAAA", mimeType: "image/png" },
+      ],
+      isError: false,
+    },
+    false,
+  );
+  const lines = component.render(60);
+  assert.ok(lines.join("\n").includes("read image"), JSON.stringify(lines));
 });
