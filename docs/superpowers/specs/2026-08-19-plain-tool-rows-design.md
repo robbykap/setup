@@ -90,6 +90,20 @@ execution to `createReadToolDefinition`, with `renderShell: "self"` and a
 row of file icon + path + a brief right-aligned note (e.g. `N lines`).
 If it is already plain, leave it alone.
 
+### Recorded deviations (as built)
+
+- The running bash row shows a `… running` marker rather than elapsed time:
+  the extension owns no 1Hz timer, so a number would freeze between renders.
+- Read's line count renders as a dim gutter line in the result slot rather
+  than right-aligned on the header: the call row draws before a result
+  exists, so the count cannot live there.
+- Re-registering read pins `autoResizeImages` to the built-in default; the
+  ExtensionContext exposes no settings accessor, so the user's image
+  auto-resize toggle does not reach the wrapped read tool. Accepted.
+- Restored sessions (resume/branch) rebuild rows without call records; bash
+  renders these as a settled `RestoredRow` keyed on `isPartial`, a state the
+  spec had not anticipated.
+
 ## Error handling
 
 - Failures collapse like successes with a deeper peek (bash) or the

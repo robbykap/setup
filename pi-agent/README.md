@@ -88,9 +88,11 @@ chrome:
 | `copy`      | Clipboard writes with a one-line receipt, and no throwing        |
 | `status`    | The one shape a status-bar segment takes                         |
 | `grouping`  | Render-time picker grouping, selection staying flat underneath   |
+| `row`       | The transcript tool row: icon, title, outcome, dim peek lines    |
+| `boxed`     | The shell Box restored by hand for `ctrl+o`-expanded built-ins   |
 
 ```sh
-cd ~/.pi/agent/extensions/shared && npm test   # 99 tests
+cd ~/.pi/agent/extensions/shared && npm test
 ```
 
 ## Status bar
@@ -102,8 +104,8 @@ with the same `◆` separator the footer uses. Segments have a fixed order and
 drop from the right when the line will not fit. Extensions publish through
 `ctx.ui.setStatus`; `ui-customization` renders the line.
 
-`file-edits` collapses every `edit` and `write` to two lines in the
-transcript. `alt+e` (or `/files`) opens the picker; Enter opens the diff
+`file-edits` collapses every `edit`, `write` and `read` to plain icon rows in
+the transcript — no filled shell box, a look every other tool row now shares. `alt+e` (or `/files`) opens the picker; Enter opens the diff
 viewer, `s` toggles stacked and split, `n`/`p` move between files. `ctrl+o`
 still expands a row inline. The shortcut is `alt+e` rather than `ctrl+f`
 because `ctrl+f` is pi's built-in forward-char binding and `ctrl+shift+f` is
@@ -115,8 +117,9 @@ same way as the other extensions, per [Install](#install) above.
 lines — the command, its outcome, and a peek at the LAST line it printed, since
 for a command the tail is the result. `alt+c` (or `/cmds`) opens the picker;
 Enter opens the output viewer, `n`/`p` move between commands, `j`/`k` and
-pgup/pgdn scroll. Failures and `ctrl+o`-expanded rows are never collapsed —
-that output is exactly what you want to see.
+pgup/pgdn scroll. Failures collapse too, with a deeper tail peek; a running
+command shows a live peek at its last output line, and `ctrl+o` still expands
+any row to the full built-in output.
 
 The history covers `bash`, `fd` and `rg`, including the ones subagents and
 workflow children run (tagged with who ran them). Producers announce on
